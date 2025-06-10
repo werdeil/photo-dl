@@ -8,11 +8,8 @@ import requests
 import time
 
 # Configuration
-TARGET_URLS = [
-    'https://www.toutemonannee.com/journal/REDACTED_UUID_1',
-    'https://www.toutemonannee.com/journal/REDACTED_UUID_2'
-]
 BASE_DOWNLOAD_DIR = os.path.expanduser('~/Documents/TMA')
+BASE_TMA_URL = 'https://www.toutemonannee.com'
 try:
     SESSION_COOKIE = os.getenv('TMA_SESSION')  # Assurez-vous de définir cette variable d'environnement
 except KeyError:
@@ -25,9 +22,15 @@ options.add_argument('headless')
 driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 driver.set_window_size(1920, 1080)
 
-DASHBOARD_URL = 'https://www.toutemonannee.com/dashboard'
+DASHBOARD_URL = f'{BASE_TMA_URL}/dashboard'
 
+list_response = requests.get(f'{BASE_TMA_URL}/spaces/list', cookies={'diedm_session': SESSION_COOKIE})
 
+spaces = []
+for space in list_response.json()['spaces']:
+    print(space.keys())
+    print(f"ID de l'espace : {space['id']}, UUID: {space['uuid']}, Nom de l'espace : {space['display_name']}")
+    spaces.append({'name': space['display_name'], 'uuid': space['uuid']})
 
 try:
 
@@ -37,13 +40,14 @@ try:
     driver.get(DASHBOARD_URL)  # Recharge la page pour appliquer les cookies
     time.sleep(5)
 
-    for url in TARGET_URLS:
+    for space in spaces:
+        url = f"{BASE_TMA_URL}/journal/{space['uuid']}"
         print(f"\nTraitement de l'URL : {url}")
 
         url_id = os.path.basename(url)
-        url_dir = os.path.join(BASE_DOWNLOAD_DIR, url_id)
-        os.makedirs(url_dir, exist_ok=True)
-        print(f"Les images seront sauvegardées dans : {url_dir}")
+        save_folder_path = os.path.join(BASE_DOWNLOAD_DIR, space['name'])
+        os.makedirs(save_folder_path, exist_ok=True)
+        print(f"Les images seront sauvegardées dans : {save_folder_path}")
 
         print("Ajout du cookie qui enleve la popup...")
         driver.add_cookie({'name': f'noShowAlbumPopupAnymore_{url_id}', 'value': '1'})
@@ -76,7 +80,7 @@ try:
                             clean_img_url = re.sub(r'\?.*$', '', hd_img_url)
                             img_data = requests.get(clean_img_url).content
                             img_name = os.path.basename(clean_img_url)
-                            img_path = os.path.join(url_dir, img_name)
+                            img_path = os.path.join(save_folder_path, img_name)
                             with open(img_path, 'wb') as img_file:
                                 img_file.write(img_data)
                             print(f"Image sauvegardée : {img_name}")
