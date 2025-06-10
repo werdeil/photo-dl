@@ -80,7 +80,7 @@ try:
 
                 # Trouver toutes les images dans le carrousel
                 images = driver.find_elements(By.CSS_SELECTOR, 'img')
-
+                print(f"Nombre d'images trouvées : {len(images)}")
                 for img in images:
                     img_url = img.get_attribute('src')
                     if img_url and 'thumbs' in img_url:
