@@ -28,8 +28,7 @@ list_response = requests.get(f'{BASE_TMA_URL}/spaces/list', cookies={'diedm_sess
 
 spaces = []
 for space in list_response.json()['spaces']:
-    print(space.keys())
-    print(f"ID de l'espace : {space['id']}, UUID: {space['uuid']}, Nom de l'espace : {space['display_name']}")
+    print(f"UUID: {space['uuid']}, Nom de l'espace : {space['display_name']}, Année : {space['display_years']}")
     spaces.append({'name': space['display_name'], 'uuid': space['uuid']})
 
 try:
@@ -46,8 +45,7 @@ try:
 
         url_id = os.path.basename(url)
         save_folder_path = os.path.join(BASE_DOWNLOAD_DIR, space['name'])
-        os.makedirs(save_folder_path, exist_ok=True)
-        print(f"Les images seront sauvegardées dans : {save_folder_path}")
+        # os.makedirs(save_folder_path, exist_ok=True)
 
         print("Ajout du cookie qui enleve la popup...")
         driver.add_cookie({'name': f'noShowAlbumPopupAnymore_{url_id}', 'value': '1'})
@@ -56,10 +54,24 @@ try:
         # Attendre que la page soit complètement chargée
         time.sleep(5)
 
-        # Trouver tous les boutons "gallery-trigger"
-        gallery_buttons = driver.find_elements(By.CSS_SELECTOR, 'button.gallery-trigger')
+        # Trouver tous les articles contenant un bouton avec la classe 'gallery-trigger'
+        articles = driver.find_elements(By.CSS_SELECTOR, "article.reactor-post:has(button.gallery-trigger)")
 
-        for button in gallery_buttons:
+        # Parcourir chaque article et extraire le titre h2
+        for article in articles:
+            # Trouver le titre h2 dans l'article
+            h2 = article.find_element(By.CSS_SELECTOR, "h2.title")
+            title_text = h2.text
+
+            # Trouver le bouton gallery-trigger dans l'article
+            button = article.find_element(By.CSS_SELECTOR, "button.gallery-trigger")
+
+            # Afficher le texte du titre et l'élément bouton
+            print("Processing gallery:", title_text)
+            article_folder_path = os.path.join(save_folder_path, title_text)
+            os.makedirs(article_folder_path, exist_ok=True)
+            print(f"Les images seront sauvegardées dans : {article_folder_path}")
+
             try:
                 # Cliquer sur le bouton pour ouvrir le carrousel
                 driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", button)
@@ -80,7 +92,7 @@ try:
                             clean_img_url = re.sub(r'\?.*$', '', hd_img_url)
                             img_data = requests.get(clean_img_url).content
                             img_name = os.path.basename(clean_img_url)
-                            img_path = os.path.join(save_folder_path, img_name)
+                            img_path = os.path.join(article_folder_path, img_name)
                             with open(img_path, 'wb') as img_file:
                                 img_file.write(img_data)
                             print(f"Image sauvegardée : {img_name}")
