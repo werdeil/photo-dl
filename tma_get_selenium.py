@@ -13,7 +13,10 @@ TARGET_URLS = [
     'https://www.toutemonannee.com/journal/REDACTED_UUID_2'
 ]
 BASE_DOWNLOAD_DIR = os.path.expanduser('~/Documents/TMA')
-SESSION_COOKIE = os.getenv('TMA_SESSION')  # Assurez-vous de définir cette variable d'environnement
+try:
+    SESSION_COOKIE = os.getenv('TMA_SESSION')  # Assurez-vous de définir cette variable d'environnement
+except KeyError:
+    raise ValueError("La variable d'environnement 'TMA_SESSION' n'est pas définie.")
 
 # Initialise le driver Selenium
 print("Initialisation du driver Chrome...")
