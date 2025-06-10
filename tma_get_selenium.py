@@ -20,10 +20,23 @@ except KeyError:
 
 # Initialise le driver Selenium
 print("Initialisation du driver Chrome...")
-driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()))
+options = webdriver.ChromeOptions()
+options.add_argument('headless')
+driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 driver.set_window_size(1920, 1080)
 
+DASHBOARD_URL = 'https://www.toutemonannee.com/dashboard'
+
+
+
 try:
+
+    driver.get(DASHBOARD_URL)
+    print("Ajout des cookies de session...")
+    driver.add_cookie({'name': 'diedm_session', 'value': SESSION_COOKIE})
+    driver.get(DASHBOARD_URL)  # Recharge la page pour appliquer les cookies
+    time.sleep(5)
+
     for url in TARGET_URLS:
         print(f"\nTraitement de l'URL : {url}")
 
@@ -32,15 +45,9 @@ try:
         os.makedirs(url_dir, exist_ok=True)
         print(f"Les images seront sauvegardées dans : {url_dir}")
 
+        print("Ajout du cookie qui enleve la popup...")
+        driver.add_cookie({'name': f'noShowAlbumPopupAnymore_{url_id}', 'value': '1'})
         driver.get(url)
-
-        if SESSION_COOKIE:
-            print("Ajout des cookies de session...")
-            driver.add_cookie({'name': 'diedm_session', 'value': SESSION_COOKIE})
-            driver.add_cookie({'name': f'noShowAlbumPopupAnymore_{url_id}', 'value': '1'})
-            driver.get(url)  # Recharge la page pour appliquer les cookies
-        else:
-            print("AVERTISSEMENT : Cookie de session non configuré.")
 
         # Attendre que la page soit complètement chargée
         time.sleep(5)
