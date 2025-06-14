@@ -89,8 +89,19 @@ try:
                 time.sleep(2)  # Attendre que le carrousel s'ouvre
 
                 # Trouver toutes les images dans le carrousel
-                images = driver.find_elements(By.XPATH, '//div[contains(@class, lg-thumb-outer)]//img')
-                print(f"Nombre d'images trouvées : {len(images)}")
+                # images = driver.find_elements(By.XPATH, '//div[contains(@class, lg-thumb-outer)]//img')
+                images = driver.find_elements(By.XPATH, '//*[@id="lg-container-1"]//img')
+                if len(images) == 26:
+                    print("Carrousel avec 25 images, on va essayer de charger plus d'images...")
+                    back_button = driver.find_element(By.ID, 'lg-prev-1')
+                    try:
+                        back_button.click()
+                        print("Bouton précédent cliqué, on attend le chargement des images...")
+                        time.sleep(2)  # Attendre que le carrousel charge les images
+                    except Exception as e:
+                        print(f"Erreur lors du clic sur le bouton précédent : {e}")
+                    images = driver.find_elements(By.XPATH, '//*[@id="lg-container-1"]//img')
+                print(f"Nombre d'images trouvées : {len(images)-1}")
                 for img in images:
                     img_url = img.get_attribute('src')
                     if img_url and 'thumbs' in img_url:
