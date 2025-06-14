@@ -18,7 +18,7 @@ except KeyError:
 # Initialise le driver Selenium
 print("Initialisation du driver Chrome...")
 options = webdriver.ChromeOptions()
-#options.add_argument('headless')
+options.add_argument('headless')
 driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 driver.set_window_size(1920, 1080)
 
@@ -53,16 +53,18 @@ try:
         # Attendre que la page soit complètement chargée
         time.sleep(5)
 
-        # Scroller jusqu'en bas de la page pour charger tous les articles
-        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-        time.sleep(2)
-        # Scroller jusqu'en haut de la page pour s'assurer que tous les articles sont visibles
-        driver.execute_script("window.scrollTo(0, 0);")
-        time.sleep(2)
-        print("Recherche des articles contenant des galeries")
-
-        # Trouver tous les articles contenant un bouton avec la classe 'gallery-trigger'
         articles = driver.find_elements(By.CSS_SELECTOR, "article.reactor-post:has(button.gallery-trigger)")
+        print(f"Nombre d'articles trouvés : {len(articles)}")
+        prev_count = 0
+        while len(articles) > prev_count:
+            prev_count = len(articles)
+            # Scroller jusqu'en bas de la page pour charger tous les articles
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(2)
+            articles = driver.find_elements(By.CSS_SELECTOR, "article.reactor-post:has(button.gallery-trigger)")
+            print(f"Nombre d'articles trouvés après le scroll : {len(articles)}")
+
+        print("Recherche des articles contenant des galeries")
 
         # Parcourir chaque article et extraire le titre h2
         for article in articles:
