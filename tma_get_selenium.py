@@ -71,7 +71,7 @@ def download_image(hd_img_url, article_folder_path):
         img_path = os.path.join(article_folder_path, img_name)
         with open(img_path, 'wb') as img_file:
             img_file.write(img_data)
-        logger.info(f"Image sauvegardée : {img_name}")
+        logger.debug(f"Image sauvegardée : {img_name}")
     except Exception as e:
         logger.error(f"Erreur lors du téléchargement de l'image {clean_img_url} : {e}")
 
@@ -123,7 +123,7 @@ def process_space(driver, space):
     driver.get(url)
     time.sleep(5)
     articles = scroll_to_load_all_articles(driver)
-    logger.info("Recherche des articles contenant des galeries")
+    logger.info(f"Nombre total d'articles trouvés dans l'espace: {len(articles)}")
     for article in articles:
         process_article(driver, article, save_folder_path)
 
