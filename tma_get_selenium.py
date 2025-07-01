@@ -59,7 +59,7 @@ def scroll_to_load_all_articles(driver):
         prev_count = len(articles)
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
         time.sleep(2)
-        articles = driver.find_elements(By.CSS_SELECTOR, "article.reactor-post:has(button.gallery-trigger)")
+        articles = driver.find_elements(By.CSS_SELECTOR, "article.reactor-post:has(div.reactor-carousel-container)")
         logger.debug(f"Nombre d'articles trouvés après le scroll : {len(articles)}")
     return articles
 
@@ -79,17 +79,23 @@ def process_article(driver, article, save_folder_path):
     h2 = article.find_element(By.CSS_SELECTOR, "h2.title")
     title_text = h2.text
     date = article.find_element(By.CSS_SELECTOR, "div.day").text + " " + article.find_element(By.CSS_SELECTOR, "div.month").text
-    button = article.find_element(By.CSS_SELECTOR, "button.gallery-trigger")
     logger.info(f"Traitement de la galerie : {title_text}")
     article_folder_path = os.path.join(save_folder_path, f"{date} - {title_text}")
     os.makedirs(article_folder_path, exist_ok=True)
     logger.debug(f"Les images seront sauvegardées dans : {article_folder_path}")
 
     try:
-        driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", button)
-        button.click()
-        time.sleep(2)
-        images = driver.find_elements(By.XPATH, '//*[@id="lg-container-1"]//img')
+        img_path = '//*[@id="lg-container-1"]//img'
+        try:
+            button = article.find_element(By.CSS_SELECTOR, "button.gallery-trigger")
+            driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", button)
+            button.click()
+            time.sleep(2)
+        except NoSuchElementException as e:
+
+            logger.error(f"Erreur lors du clic sur le bouton de la galerie {title_text} : {e}")
+            img_path = '//*[contains(@class,"cursor-zoomin")]'
+        images = driver.find_elements(By.XPATH, img_path)
         if len(images) == 26:
             logger.debug("Carrousel avec 25 images, on va essayer de charger plus d'images...")
             try:
@@ -99,6 +105,14 @@ def process_article(driver, article, save_folder_path):
                 time.sleep(2)
             except NoSuchElementException as e:
                 logger.error(f"Erreur lors du clic sur le bouton précédent : {e}")
+            images = driver.find_elements(By.XPATH, '//*[@id="lg-container-1"]//img')
+        if len(images) == 51:
+            logger.debug("Carrousel avec 50 images, on va essayer de charger encore plus d'images...")
+            for i in range(25):
+                next_button = driver.find_element(By.ID, 'lg-next-1')
+                next_button.click()
+                logger.debug("Bouton suivant cliqué, on attend le chargement des images...")
+                time.sleep(0.5)
             images = driver.find_elements(By.XPATH, '//*[@id="lg-container-1"]//img')
         logger.info(f"Nombre d'images trouvées : {len(images)-1}")
         for img in images:
