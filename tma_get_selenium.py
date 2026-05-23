@@ -28,7 +28,7 @@ def get_session_cookie():
         raise ValueError("La variable d'environnement 'TMA_SESSION' n'est pas définie.")
     return session
 
-def init_driver(headless=True):
+def init_driver(headless=False):
     logger.info("Initialisation du driver Chrome...")
     options = webdriver.ChromeOptions()
     if not headless:
@@ -49,6 +49,9 @@ def get_spaces(session_cookie):
     spaces = []
     for space in list_response.json()['spaces']:
         logger.info(f"UUID: {space['uuid']}, Année : {space['display_years']}, Nom de l'espace : {space['display_name']}")
+        spaces.append({'name': space['display_name'], 'uuid': space['uuid']})
+    for space in list_response.json().get('spaces_soon_archived', []):
+        logger.info(f"UUID: {space['uuid']}, Année : {space['display_years']}, Nom de l'espace (archivé) : {space['display_name']}")
         spaces.append({'name': space['display_name'], 'uuid': space['uuid']})
     return spaces
 
@@ -138,6 +141,7 @@ def process_space(driver, space):
     url_id = os.path.basename(url)
     save_folder_path = os.path.join(BASE_DOWNLOAD_DIR, space['name'])
     driver.add_cookie({'name': f'noShowAlbumPopupAnymore_{url_id}', 'value': '1'})
+    driver.add_cookie({'name': 'noShowSouvenirPopupAnymore', 'value': '1'})
     driver.get(url)
     time.sleep(5)
     articles = scroll_to_load_all_articles(driver)
