@@ -23,11 +23,44 @@ BASE_DOWNLOAD_DIR = os.path.expanduser('~/Documents/TMA')
 BASE_TMA_URL = 'https://www.toutemonannee.com'
 DASHBOARD_URL = f'{BASE_TMA_URL}/dashboard'
 
-def get_session_cookie():
+def login_with_credentials(driver, username, password):
+    """Remplit le formulaire de login en 2 étapes et retourne le cookie diedm_session."""
+    driver.get(f'{BASE_TMA_URL}/login')
+    time.sleep(4)
+
+    driver.find_element(By.NAME, 'username').send_keys(username)
+    driver.find_element(By.CSS_SELECTOR, 'button[type="submit"]').click()
+    time.sleep(3)
+
+    driver.find_element(By.NAME, 'password').send_keys(password)
+    driver.find_element(By.CSS_SELECTOR, 'button[type="submit"]').click()
+    time.sleep(5)
+
+    cookies = {c['name']: c['value'] for c in driver.get_cookies()}
+    session_cookie = cookies.get('diedm_session')
+    if not session_cookie or '/connect' in driver.current_url or '/login' in driver.current_url:
+        raise ValueError("Login échoué : vérifiez TMA_USERNAME et TMA_PASSWORD.")
+
+    logger.info("Connexion réussie, cookie de session récupéré.")
+    return session_cookie
+
+def get_session_cookie(driver=None):
     session = os.getenv('TMA_SESSION')
-    if not session:
-        raise ValueError("La variable d'environnement 'TMA_SESSION' n'est pas définie.")
-    return session
+    if session:
+        return session
+
+    username = os.getenv('TMA_USERNAME')
+    password = os.getenv('TMA_PASSWORD')
+    if username and password:
+        if driver is None:
+            raise ValueError("Un driver Selenium est requis pour se connecter avec TMA_USERNAME/TMA_PASSWORD.")
+        logger.info("TMA_SESSION absent, connexion avec TMA_USERNAME/TMA_PASSWORD...")
+        return login_with_credentials(driver, username, password)
+
+    raise ValueError(
+        "Aucune authentification disponible. "
+        "Définissez TMA_SESSION ou TMA_USERNAME+TMA_PASSWORD dans le .env."
+    )
 
 def init_driver(headless=True):
     logger.info("Initialisation du driver Chrome...")
@@ -230,10 +263,10 @@ def process_space(driver, space, session_cookie=None):
         process_post(driver, date, title_text, post_url, save_folder_path, session_cookie)
 
 def main():
-    session_cookie = get_session_cookie()
     driver = init_driver()
     try:
         driver.get(DASHBOARD_URL)
+        session_cookie = get_session_cookie(driver)
         driver.add_cookie({'name': 'diedm_session', 'value': session_cookie})
         driver.get(DASHBOARD_URL)
         time.sleep(5)

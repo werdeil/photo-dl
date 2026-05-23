@@ -11,9 +11,17 @@ Python scraper that downloads photos from [toutemonannee.com](https://www.toutem
 ```bash
 # Activate virtualenv (Python 3.13, already configured)
 source .venv/bin/activate
+```
 
-# Required: valid session cookie from toutemonannee.com
-export TMA_SESSION="<diedm_session cookie value>"
+Auth via `.env` — deux options (par ordre de priorité) :
+
+```bash
+# Option 1 : cookie de session direct (prioritaire si défini)
+TMA_SESSION="<diedm_session cookie value>"
+
+# Option 2 : identifiants — le script se connecte automatiquement via Selenium headless
+TMA_USERNAME="email@example.com"
+TMA_PASSWORD="motdepasse"
 ```
 
 Install dependencies:
@@ -47,7 +55,7 @@ main()
 
 ### Key implementation details
 
-- **Auth**: `get_session_cookie()` reads `TMA_SESSION` env var and injects it as the `diedm_session` cookie into both the `requests` session and the Selenium driver.
+- **Auth**: `get_session_cookie()` tente d'abord `TMA_SESSION`, sinon appelle `login_with_credentials()` qui ouvre Chrome headless, remplit le formulaire en deux étapes (email → "Continuer" → password → "Je me connecte") et retourne le cookie `diedm_session`. Ce cookie est ensuite injecté dans la session `requests` et le driver Selenium.
 - **Image URL normalization**: thumbnail URLs containing `"thumbs"` are rewritten to their HD equivalents; query strings are stripped.
 - **Carousel pagination**: articles can have >25 or >50 images; `process_article()` clicks "next page" controls and handles both cases.
 - **Single-image articles**: handled as a special case separate from carousel logic.
