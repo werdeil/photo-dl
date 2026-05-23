@@ -16,13 +16,18 @@ source .venv/bin/activate
 export TMA_SESSION="<diedm_session cookie value>"
 ```
 
-No `requirements.txt` exists — dependencies are installed directly in `.venv/`.  
+Install dependencies:
+
+```bash
+pip3 install -r requirements.txt
+```
+
 Key packages: `selenium==4.33.0`, `requests==2.32.3`, `webdriver-manager==4.0.2`, `beautifulsoup4==4.13.4`.
 
 ## Running
 
 ```bash
-python tma_get_selenium.py
+python3 tma_get_selenium.py
 ```
 
 Downloads to `~/Documents/TMA/`, organized as `{space_name}/{date} - {title}/`.
