@@ -13,15 +13,14 @@ Python scraper that downloads photos from [toutemonannee.com](https://www.toutem
 source .venv/bin/activate
 ```
 
-Auth via `.env` — deux options (par ordre de priorité) :
+Auth via `.env` :
 
 ```bash
-# Option 1 : cookie de session direct (prioritaire si défini)
-TMA_SESSION="<diedm_session cookie value>"
-
-# Option 2 : identifiants — le script se connecte automatiquement via Selenium headless
 TMA_USERNAME="email@example.com"
 TMA_PASSWORD="motdepasse"
+
+# Dossier de téléchargement (obligatoire)
+TMA_DOWNLOAD_DIR="/chemin/vers/dossier"
 ```
 
 Install dependencies:
@@ -38,7 +37,7 @@ Key packages: `selenium==4.33.0`, `requests==2.32.3`, `webdriver-manager==4.0.2`
 python3 tma_get_selenium.py
 ```
 
-Downloads to `~/Documents/TMA/`, organized as `{space_name}/{date} - {title}/`.
+Downloads to `TMA_DOWNLOAD_DIR`, organized as `{space_name}/{date} - {title}/`.
 
 ## Architecture
 
@@ -55,9 +54,9 @@ main()
 
 ### Key implementation details
 
-- **Auth**: `get_session_cookie()` tente d'abord `TMA_SESSION`, sinon appelle `login_with_credentials()` qui ouvre Chrome headless, remplit le formulaire en deux étapes (email → "Continuer" → password → "Je me connecte") et retourne le cookie `diedm_session`. Ce cookie est ensuite injecté dans la session `requests` et le driver Selenium.
+- **Auth**: `get_session_cookie()` appelle `login_with_credentials()` qui ouvre Chrome headless, remplit le formulaire en deux étapes (email → "Continuer" → password → "Je me connecte") et retourne le cookie `diedm_session`. Ce cookie est ensuite injecté dans la session `requests` et le driver Selenium.
 - **Image URL normalization**: thumbnail URLs containing `"thumbs"` are rewritten to their HD equivalents; query strings are stripped.
 - **Carousel pagination**: articles can have >25 or >50 images; `process_article()` clicks "next page" controls and handles both cases.
 - **Single-image articles**: handled as a special case separate from carousel logic.
-- **Output path**: hardcoded to `~/Documents/TMA/`; `init_driver()` accepts a `headless` bool (defaults `False`).
+- **Output path**: défini par `TMA_DOWNLOAD_DIR` dans `.env` (obligatoire, lève `EnvironmentError` si absent); `init_driver()` accepts a `headless` bool (defaults `False`).
 - **Logging**: uses Python's `logging` at INFO level; no log file, stdout only.

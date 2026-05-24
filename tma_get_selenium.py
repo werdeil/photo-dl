@@ -21,7 +21,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-BASE_DOWNLOAD_DIR = os.path.expanduser('~/Documents/TMA')
+_download_dir = os.getenv('TMA_DOWNLOAD_DIR')
+if not _download_dir:
+    raise EnvironmentError("TMA_DOWNLOAD_DIR is not set in .env")
+BASE_DOWNLOAD_DIR = os.path.expanduser(_download_dir)
 BASE_TMA_URL = 'https://www.toutemonannee.com'
 DASHBOARD_URL = f'{BASE_TMA_URL}/dashboard'
 
@@ -48,29 +51,18 @@ def login_with_credentials(driver, username, password):
     return session_cookie
 
 
-def get_session_cookie(driver=None):
-    """Retourne le cookie diedm_session depuis l'env ou via login Selenium."""
-    session = os.getenv('TMA_SESSION')
-    if session:
-        return session
-
+def get_session_cookie(driver):
+    """Retourne le cookie diedm_session via login Selenium."""
     username = os.getenv('TMA_USERNAME')
     password = os.getenv('TMA_PASSWORD')
-    if username and password:
-        if driver is None:
-            raise ValueError(
-                "Un driver Selenium est requis pour se connecter avec TMA_USERNAME/TMA_PASSWORD."
-            )
-        logger.info("TMA_SESSION absent, connexion avec TMA_USERNAME/TMA_PASSWORD...")
-        return login_with_credentials(driver, username, password)
-
-    raise ValueError(
-        "Aucune authentification disponible. "
-        "Définissez TMA_SESSION ou TMA_USERNAME+TMA_PASSWORD dans le .env."
-    )
+    if not username or not password:
+        raise ValueError(
+            "Définissez TMA_USERNAME et TMA_PASSWORD dans le .env."
+        )
+    return login_with_credentials(driver, username, password)
 
 
-def init_driver(headless=True):
+def init_driver(headless=os.getenv('TMA_HEADLESS', 'true').lower() != 'false'):
     """Initialise et retourne un driver Chrome."""
     logger.info("Initialisation du driver Chrome...")
     options = webdriver.ChromeOptions()
