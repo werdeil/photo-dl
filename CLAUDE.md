@@ -4,7 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Purpose
 
-Python scraper that downloads photos from [toutemonannee.com](https://www.toutemonannee.com), a French photo/memory sharing platform. It uses Selenium to drive Chrome through JavaScript-heavy gallery pages and saves images locally organized by album and date.
+Python scrapers that download photos from two French school photo-sharing platforms:
+- [toutemonannee.com](https://www.toutemonannee.com) — `tma/tma_get_selenium.py`
+- [klass.ly](https://fr.klass.ly) — `klassly/klassly_get.py`
+
+Both use Selenium to drive Chrome and save images locally organized by album/class and date.
 
 ## Setup
 
@@ -18,9 +22,11 @@ Auth via `.env` :
 ```bash
 TMA_USERNAME="email@example.com"
 TMA_PASSWORD="motdepasse"
-
-# Dossier de téléchargement (obligatoire)
 TMA_DOWNLOAD_DIR="/chemin/vers/dossier"
+
+KLASSLY_USERNAME="+33600000000"
+KLASSLY_PASSWORD="motdepasse"
+KLASSLY_DOWNLOAD_DIR="/chemin/vers/dossier"
 ```
 
 Install dependencies:
@@ -34,14 +40,16 @@ Key packages: `selenium==4.33.0`, `requests==2.32.3`, `webdriver-manager==4.0.2`
 ## Running
 
 ```bash
-python3 tma_get_selenium.py
+python3 tma/tma_get_selenium.py     # toutemonannee.com
+python3 klassly/klassly_get.py      # klass.ly
 ```
 
-Downloads to `TMA_DOWNLOAD_DIR`, organized as `{space_name}/{date} - {title}/`.
+TMA downloads to `TMA_DOWNLOAD_DIR`, organized as `{space_name}/{date} - {title}/`.
+Klassly downloads to `KLASSLY_DOWNLOAD_DIR`, organized as `{class_name}/{date} - {post_text}/`.
 
 ## Architecture
 
-### Flow in `tma_get_selenium.py`
+### Flow in `tma/tma_get_selenium.py`
 
 ```
 main()
@@ -60,3 +68,23 @@ main()
 - **Single-image articles**: handled as a special case separate from carousel logic.
 - **Output path**: défini par `TMA_DOWNLOAD_DIR` dans `.env` (obligatoire, lève `EnvironmentError` si absent); `init_driver()` accepts a `headless` bool (defaults `False`).
 - **Logging**: uses Python's `logging` at INFO level; no log file, stdout only.
+
+### Flow in `klassly/klassly_get.py`
+
+```
+main()
+  └─ login()               → Selenium remplit tel+password, retourne klassroom_token cookie
+  └─ get_classes()         → navigue /class, capture app.connect via CDP → liste des classes
+  └─ process_class()       → par classe : scroll pour charger tous les posts
+       └─ collect_all_posts()   → CDP klass.history en boucle jusqu'à épuisement
+       └─ process_post()        → pour chaque post : télécharge les images
+            └─ download_image() → Selenium navigue vers l'URL + capture CDP (requests bloqué par 403)
+```
+
+### Key implementation details (Klassly)
+
+- **Auth**: formulaire en une étape (tel + password visibles ensemble) → `button.kr-login-form__btn`; cookie `klassroom_token` récupéré après login.
+- **Classes**: extraites du champ `klasses` de la réponse `app.connect` capturée via CDP lors de la navigation `/class`.
+- **Posts**: `klass.history` capturé via CDP pendant la navigation + scroll; posts retournés comme dict keyed by postID avec `attachments` embarqués.
+- **Image download**: `www.klass.ly` et `data.klassroom.co` bloquent Python `requests` (403) mais acceptent Chrome → téléchargement via `driver.get(url)` + `Network.getResponseBody` CDP. URLs normalisées de `data.klassroom.co/img/` vers `www.klass.ly/_data/img/`.
+- **Output path**: défini par `KLASSLY_DOWNLOAD_DIR` dans `.env`; `KLASSLY_HEADLESS=false` pour mode visible.
