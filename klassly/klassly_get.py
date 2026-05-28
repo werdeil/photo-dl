@@ -15,6 +15,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import WebDriverException
 from webdriver_manager.chrome import ChromeDriverManager
 
 load_dotenv()
@@ -34,6 +35,7 @@ IMG_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 # ---------------------------------------------------------------------------
 
 def init_driver(headless=True):
+    """Initialise et retourne un driver Chrome avec le logging CDP activé."""
     opts = Options()
     if headless:
         opts.add_argument("--headless=new")
@@ -105,7 +107,7 @@ def _flush_cdp_json(driver, url_fragment):
                 "Network.getResponseBody", {"requestId": req_id}
             )
             results.append(json.loads(raw.get("body", "{}")))
-        except Exception:
+        except (WebDriverException, json.JSONDecodeError):
             pass
     return results
 
@@ -139,7 +141,7 @@ def _cdp_get_image_body(driver, url):
             if raw.get("base64Encoded"):
                 return base64.b64decode(raw["body"])
             return raw["body"].encode()
-        except Exception:
+        except (WebDriverException, json.JSONDecodeError):
             pass
     return None
 
@@ -208,14 +210,16 @@ def collect_all_posts(driver):
 # Nommage
 # ---------------------------------------------------------------------------
 
-def safe_name(s):
-    return re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', s).strip()
+def safe_name(name):
+    """Remplace les caractères interdits dans un nom de fichier/dossier."""
+    return re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', name).strip()
 
 
 def post_folder_name(post_id, post):
-    ts = post.get("date", 0)
+    """Retourne le nom de dossier `YYYY-MM-DD - titre` pour un post."""
+    epoch_ms = post.get("date", 0)
     date_str = (
-        datetime.fromtimestamp(ts / 1000).strftime("%Y-%m-%d") if ts else "unknown"
+        datetime.fromtimestamp(epoch_ms / 1000).strftime("%Y-%m-%d") if epoch_ms else "unknown"
     )
     text = post.get("text") or post.get("title") or ""
     if text:
@@ -246,8 +250,8 @@ def download_image(driver, url, dest_path):
         return False
 
     os.makedirs(os.path.dirname(dest_path), exist_ok=True)
-    with open(dest_path, "wb") as f:
-        f.write(data)
+    with open(dest_path, "wb") as out:
+        out.write(data)
     logger.info("  Téléchargé : %s", os.path.basename(dest_path))
     return True
 
@@ -264,6 +268,7 @@ def _normalize_image_url(url):
 
 
 def process_post(driver, post_id, post, class_dir):
+    """Télécharge toutes les images attachées à un post dans son dossier."""
     attachments = post.get("attachments") or {}
     images = [a for a in attachments.values() if a.get("type") == "image"]
     if not images:
@@ -286,6 +291,7 @@ def process_post(driver, post_id, post, class_dir):
 
 
 def process_class(driver, klass, download_dir):
+    """Collecte tous les posts d'une classe et télécharge leurs images."""
     class_name = klass["name"]
     class_url = klass["url"]
     class_dir = os.path.join(download_dir, safe_name(class_name))
@@ -307,6 +313,7 @@ def process_class(driver, klass, download_dir):
 # ---------------------------------------------------------------------------
 
 def main():
+    """Point d'entrée : charge la config, authentifie et télécharge toutes les classes."""
     download_dir = os.getenv("KLASSLY_DOWNLOAD_DIR")
     if not download_dir:
         raise EnvironmentError("KLASSLY_DOWNLOAD_DIR non défini dans .env")
