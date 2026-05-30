@@ -17,6 +17,7 @@ from school_photo_dl.shared.driver import init_driver
 from school_photo_dl.shared.utils import (
     build_name_prefix,
     configure_logging,
+    first_sentence,
     safe_name,
     set_image_datetime,
     slugify,
@@ -205,12 +206,13 @@ def _post_naming(post_id, post):
         )
         iso_date = base_dt.strftime("%Y-%m-%d")
 
-    text = post.get("text") or post.get("title") or ""
-    folder_title = safe_name(text[:60]).strip("_").strip() if text else post_id
+    raw_text = post.get("text") or post.get("title") or ""
+    title = first_sentence(raw_text, max_len=60)
+    folder_title = safe_name(title).strip("_").strip() if title else post_id
     folder_date = iso_date or "unknown"
     folder_name = f"{folder_date} - {folder_title}"
 
-    name_prefix = build_name_prefix(iso_date, slugify(text))
+    name_prefix = build_name_prefix(iso_date, slugify(title))
     return folder_name, name_prefix, base_dt
 
 

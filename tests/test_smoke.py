@@ -6,6 +6,7 @@ from school_photo_dl.cli import build_parser
 from school_photo_dl.klassly.scraper import _post_naming
 from school_photo_dl.shared.utils import (
     build_name_prefix,
+    first_sentence,
     parse_french_date,
     safe_name,
     slugify,
@@ -127,3 +128,40 @@ def test_post_naming_klassly_no_date():
     assert folder.startswith("unknown - ")
     assert prefix == "kermesse"
     assert base_dt is None
+
+
+def test_first_sentence_takes_first_line():
+    """first_sentence prend la première ligne non vide."""
+    assert first_sentence("\n\nPremière ligne\nSeconde ligne") == "Première ligne"
+
+
+def test_first_sentence_cuts_at_punctuation():
+    """first_sentence coupe à `.`, `!` ou `?`."""
+    assert first_sentence("Bonjour le monde. Et la suite.") == "Bonjour le monde"
+    assert first_sentence("Super sortie ! On a vu plein de choses.") == "Super sortie"
+    assert first_sentence("Vraiment ? Oui.") == "Vraiment"
+
+
+def test_first_sentence_truncates():
+    """first_sentence tronque à max_len sans phrase terminale."""
+    assert first_sentence("a" * 100, max_len=20) == "a" * 20
+
+
+def test_first_sentence_empty():
+    """first_sentence retourne '' pour entrée vide ou whitespace."""
+    assert first_sentence("") == ""
+    assert first_sentence("   \n  \n") == ""
+
+
+def test_post_naming_klassly_multiline_takes_first_sentence():
+    """Post multi-lignes → dossier basé sur la première phrase."""
+    post = {
+        "date": 1710500400000,
+        "text": (
+            "Sortie au musée d'Orsay. Voici les photos prises par les enfants.\n"
+            "Merci aux parents."
+        ),
+    }
+    folder, prefix, _ = _post_naming("PID", post)
+    assert folder == "2024-03-15 - Sortie au musée d'Orsay"
+    assert prefix == "2024-03-15_sortie-au-musee-d-orsay"

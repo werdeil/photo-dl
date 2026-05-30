@@ -48,6 +48,31 @@ def build_name_prefix(iso_date, title_slug):
     return iso_date or title_slug
 
 
+def first_sentence(text, max_len=80):
+    """Extrait la première phrase d'un texte multi-lignes.
+
+    Saute les lignes vides en tête, coupe à `.`, `!`, `?` ou émoji-séparateur,
+    puis tronque à `max_len`. Utile pour nommer un dossier à partir d'un post
+    sans titre explicite.
+    """
+    if not text:
+        return ""
+    line = ""
+    for raw in text.splitlines():
+        stripped = raw.strip()
+        if stripped:
+            line = stripped
+            break
+    if not line:
+        return ""
+    match = re.search(r"[.!?]", line)
+    if match:
+        line = line[:match.start()].rstrip()
+    if len(line) > max_len:
+        line = line[:max_len].rstrip()
+    return line
+
+
 def slugify(text, max_len=40):
     """Convertit un texte en slug ASCII portable.
 
