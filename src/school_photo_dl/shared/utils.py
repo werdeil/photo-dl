@@ -3,6 +3,7 @@
 import logging
 import os
 import re
+import unicodedata
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -35,6 +36,32 @@ def configure_logging():
 def safe_name(name):
     """Remplace les caractères interdits dans un nom de fichier/dossier."""
     return re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', name).strip()
+
+
+def build_name_prefix(iso_date, title_slug):
+    """Combine `YYYY-MM-DD` et un slug en préfixe `YYYY-MM-DD_slug`.
+
+    Si l'un manque, retourne l'autre. Si les deux manquent, retourne `""`.
+    """
+    if iso_date and title_slug:
+        return f"{iso_date}_{title_slug}"
+    return iso_date or title_slug
+
+
+def slugify(text, max_len=40):
+    """Convertit un texte en slug ASCII portable.
+
+    Minuscules, accents supprimés, tout caractère non alphanumérique remplacé
+    par un tiret. Retourne une chaîne vide si l'entrée est vide ou ne contient
+    aucun caractère exploitable.
+    """
+    if not text:
+        return ""
+    ascii_text = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('ascii')
+    slug = re.sub(r'[^a-zA-Z0-9]+', '-', ascii_text).strip('-').lower()
+    if len(slug) > max_len:
+        slug = slug[:max_len].rstrip('-')
+    return slug
 
 
 def parse_french_date(date_str, years_range, default_hour=10):

@@ -14,7 +14,13 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import WebDriverException
 
 from school_photo_dl.shared.driver import init_driver
-from school_photo_dl.shared.utils import configure_logging, safe_name, set_image_datetime
+from school_photo_dl.shared.utils import (
+    build_name_prefix,
+    configure_logging,
+    safe_name,
+    set_image_datetime,
+    slugify,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -184,18 +190,28 @@ def collect_all_posts(driver):
 # Nommage
 # ---------------------------------------------------------------------------
 
-def post_folder_name(post_id, post):
-    """Retourne le nom de dossier `YYYY-MM-DD - titre` pour un post."""
+def _post_naming(post_id, post):
+    """Retourne (folder_name, name_prefix, base_dt) pour un post klassly.
+
+    - Dossier : `YYYY-MM-DD - {texte tronqué}` (fallback `unknown` / `post_id` si manquant).
+    - Préfixe fichier : `YYYY-MM-DD_slug` avec dégradés alignés sur TMA.
+    """
     epoch_ms = post.get("date", 0)
-    date_str = (
-        datetime.fromtimestamp(epoch_ms / 1000).strftime("%Y-%m-%d") if epoch_ms else "unknown"
-    )
+    base_dt = None
+    iso_date = ""
+    if epoch_ms:
+        base_dt = datetime.fromtimestamp(epoch_ms / 1000).replace(
+            hour=10, minute=0, second=0, microsecond=0
+        )
+        iso_date = base_dt.strftime("%Y-%m-%d")
+
     text = post.get("text") or post.get("title") or ""
-    if text:
-        title = safe_name(text[:60]).strip("_").strip()
-    else:
-        title = post_id
-    return f"{date_str} - {title}"
+    folder_title = safe_name(text[:60]).strip("_").strip() if text else post_id
+    folder_date = iso_date or "unknown"
+    folder_name = f"{folder_date} - {folder_title}"
+
+    name_prefix = build_name_prefix(iso_date, slugify(text))
+    return folder_name, name_prefix, base_dt
 
 
 # ---------------------------------------------------------------------------
@@ -236,6 +252,24 @@ def _normalize_image_url(url):
     )
 
 
+def _download_attachment(driver, att, index, post_ctx):
+    """Télécharge une image attachée et applique la date EXIF si fournie.
+
+    post_ctx : tuple (folder, name_prefix, base_dt) constant pour tout le post.
+    """
+    folder, name_prefix, base_dt = post_ctx
+    url = _normalize_image_url(att.get("url", ""))
+    if not url:
+        return
+    ext = (att.get("extension") or "jpg").lstrip(".").lower()
+    num = f"{index + 1:03d}"
+    name = f"{num}_{name_prefix}.{ext}" if name_prefix else f"{num}.{ext}"
+    dest = os.path.join(folder, name)
+    download_image(driver, url, dest)
+    if base_dt and os.path.exists(dest):
+        set_image_datetime(dest, base_dt + timedelta(minutes=index))
+
+
 def process_post(driver, post_id, post, class_dir):
     """Télécharge toutes les images attachées à un post dans son dossier."""
     attachments = post.get("attachments") or {}
@@ -243,30 +277,14 @@ def process_post(driver, post_id, post, class_dir):
     if not images:
         return
 
-    folder = os.path.join(class_dir, post_folder_name(post_id, post))
+    folder_name, name_prefix, base_dt = _post_naming(post_id, post)
+    folder = os.path.join(class_dir, folder_name)
     os.makedirs(folder, exist_ok=True)
-
-    epoch_ms = post.get("date", 0)
-    base_dt = None
-    if epoch_ms:
-        base_dt = datetime.fromtimestamp(epoch_ms / 1000).replace(
-            hour=10, minute=0, second=0, microsecond=0
-        )
+    post_ctx = (folder, name_prefix, base_dt)
 
     sorted_images = sorted(images, key=lambda a: a.get("position", 0))
     for index, att in enumerate(sorted_images):
-        url = _normalize_image_url(att.get("url", ""))
-        if not url:
-            continue
-        ext = att.get("extension", "jpg")
-        pos = att.get("position", 0)
-        name = safe_name(att.get("name", f"{pos:03d}_{att.get('id', '')}"))
-        if not name.lower().endswith(f".{ext}"):
-            name = f"{pos:03d}_{name}"
-        dest = os.path.join(folder, name)
-        download_image(driver, url, dest)
-        if base_dt and os.path.exists(dest):
-            set_image_datetime(dest, base_dt + timedelta(minutes=index))
+        _download_attachment(driver, att, index, post_ctx)
 
 
 def process_class(driver, klass, download_dir):

@@ -25,7 +25,7 @@ def init_driver(headless=True, enable_cdp=False):
     if enable_cdp:
         opts.set_capability("goog:loggingPrefs", {"performance": "ALL"})
 
-    driver = webdriver.Chrome(
+    driver = webdriver.Chrome(  # pylint: disable=not-callable
         service=Service(ChromeDriverManager().install()), options=opts
     )
     if enable_cdp:

@@ -3,7 +3,14 @@
 from datetime import datetime
 
 from school_photo_dl.cli import build_parser
-from school_photo_dl.shared.utils import parse_french_date, safe_name
+from school_photo_dl.klassly.scraper import _post_naming
+from school_photo_dl.shared.utils import (
+    build_name_prefix,
+    parse_french_date,
+    safe_name,
+    slugify,
+)
+from school_photo_dl.tma.scraper import _build_image_filename
 
 
 def test_package_importable():
@@ -50,3 +57,73 @@ def test_parse_french_date_returns_none_on_garbage():
     assert parse_french_date("", "2024-2025") is None
     assert parse_french_date("unknown", "2024-2025") is None
     assert parse_french_date("32 mai", "2024-2025") is None
+
+
+def test_slugify_lowercases_and_strips_accents():
+    """slugify enlève accents, espaces et caractères spéciaux."""
+    assert slugify("Sortie au musée") == "sortie-au-musee"
+    assert slugify("Kermesse de fin d'année !") == "kermesse-de-fin-d-annee"
+    assert slugify("") == ""
+    assert slugify("   ") == ""
+
+
+def test_slugify_truncates():
+    """slugify tronque proprement et n'expose pas de tiret final."""
+    long_text = "a" * 30 + " " + "b" * 30
+    out = slugify(long_text, max_len=40)
+    assert len(out) <= 40
+    assert not out.endswith("-")
+
+
+def test_build_image_filename_with_full_prefix():
+    """Format nominal : NNN_YYYY-MM-DD_slug.ext, 1-indexé."""
+    name = _build_image_filename("2025-03-15_sortie-musee", 0, "https://x/y/abc.jpg?token=1")
+    assert name == "001_2025-03-15_sortie-musee.jpg"
+    name = _build_image_filename("2025-03-15_sortie-musee", 26, "https://x/y/abc.PNG")
+    assert name == "027_2025-03-15_sortie-musee.png"
+
+
+def test_build_image_filename_without_prefix():
+    """Sans préfixe (titre + date KO), on n'a que l'index et l'extension."""
+    assert _build_image_filename("", 0, "https://x/y/z.jpg") == "001.jpg"
+
+
+def test_build_image_filename_default_extension():
+    """Extension absente de l'URL → .jpg par défaut."""
+    assert _build_image_filename("p", 0, "https://x/y/noext") == "001_p.jpg"
+
+
+def test_build_name_prefix_combines_or_falls_back():
+    """Combine date+slug ; sinon retourne celui qui existe ; vide si rien."""
+    assert build_name_prefix("2025-03-15", "sortie") == "2025-03-15_sortie"
+    assert build_name_prefix("2025-03-15", "") == "2025-03-15"
+    assert build_name_prefix("", "sortie") == "sortie"
+    assert build_name_prefix("", "") == ""
+
+
+def test_post_naming_klassly_nominal():
+    """Post klassly avec date et texte → dossier ISO + préfixe slug."""
+    # 1710500400 = 2024-03-15 09:20:00 UTC, soit dans la journée locale
+    post = {"date": 1710500400000, "text": "Sortie au musée"}
+    folder, prefix, base_dt = _post_naming("PID", post)
+    assert folder.startswith("2024-03-15 - ")
+    assert "Sortie au mus" in folder
+    assert prefix == "2024-03-15_sortie-au-musee"
+    assert base_dt is not None
+
+
+def test_post_naming_klassly_no_text_falls_back_to_post_id():
+    """Post sans texte → dossier '… - {post_id}', préfixe = juste la date."""
+    post = {"date": 1710500400000}
+    folder, prefix, _ = _post_naming("PID42", post)
+    assert folder.endswith(" - PID42")
+    assert prefix == "2024-03-15"
+
+
+def test_post_naming_klassly_no_date():
+    """Post sans date → dossier 'unknown - …', préfixe = juste le slug."""
+    post = {"text": "Kermesse"}
+    folder, prefix, base_dt = _post_naming("PID", post)
+    assert folder.startswith("unknown - ")
+    assert prefix == "kermesse"
+    assert base_dt is None

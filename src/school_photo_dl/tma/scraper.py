@@ -13,10 +13,12 @@ import requests
 
 from school_photo_dl.shared.driver import init_driver
 from school_photo_dl.shared.utils import (
+    build_name_prefix,
     configure_logging,
     parse_french_date,
     safe_name,
     set_image_datetime,
+    slugify,
 )
 
 logger = logging.getLogger(__name__)
@@ -127,24 +129,31 @@ def collect_article_data(driver):
     return result
 
 
-def download_image(hd_img_url, article_folder_path, session_cookie=None):
-    """Télécharge une image HD et la sauvegarde localement. Retourne le chemin ou None."""
-    clean_img_url = re.sub(r'\?.*$', '', hd_img_url)
-    img_name = os.path.basename(clean_img_url)
-    img_path = os.path.join(article_folder_path, img_name)
-    if os.path.exists(img_path):
+def download_image(hd_img_url, dest_path, session_cookie=None):
+    """Télécharge une image HD vers dest_path. Retourne le chemin ou None."""
+    img_name = os.path.basename(dest_path)
+    if os.path.exists(dest_path):
         logger.debug("Déjà téléchargée : %s", img_name)
-        return img_path
+        return dest_path
+    clean_img_url = re.sub(r'\?.*$', '', hd_img_url)
     try:
         cookies = {'diedm_session': session_cookie} if session_cookie else {}
         img_data = requests.get(clean_img_url, cookies=cookies, timeout=30).content
-        with open(img_path, 'wb') as img_file:
+        with open(dest_path, 'wb') as img_file:
             img_file.write(img_data)
         logger.info("Image sauvegardée : %s", img_name)
-        return img_path
+        return dest_path
     except Exception as err:  # pylint: disable=broad-except
         logger.error("Erreur téléchargement %s : %s", clean_img_url, err)
         return None
+
+
+def _build_image_filename(name_prefix, index, src_url):
+    """Construit `NNN_{name_prefix}.ext`. Si name_prefix vide → `NNN.ext`."""
+    clean = re.sub(r'\?.*$', '', src_url)
+    ext = os.path.splitext(clean)[1].lower() or '.jpg'
+    num = f"{index + 1:03d}"
+    return f"{num}_{name_prefix}{ext}" if name_prefix else f"{num}{ext}"
 
 
 def extract_image_urls_from_page(driver):
@@ -183,7 +192,8 @@ def _apply_photo_date(img_path, base_dt, index):
     set_image_datetime(img_path, base_dt + timedelta(minutes=index))
 
 
-def _handle_gallery_images(driver, article_folder_path, session_cookie, base_dt=None):
+def _handle_gallery_images(driver, article_folder_path, session_cookie,
+                           base_dt=None, name_prefix=""):
     """Gère la pagination lightgallery et télécharge les images ; retourne le nombre téléchargé."""
     images = driver.find_elements(By.XPATH, '//*[contains(@id,"lg-container")]//img')
     if len(images) == 26:
@@ -207,15 +217,17 @@ def _handle_gallery_images(driver, article_folder_path, session_cookie, base_dt=
     for img in images:
         src = img.get_attribute('src') or ''
         if 'thumbs' in src:
-            img_path = download_image(
-                src.replace('thumbs', 'hd'), article_folder_path, session_cookie
-            )
+            hd_url = src.replace('thumbs', 'hd')
+            filename = _build_image_filename(name_prefix, downloaded, hd_url)
+            dest_path = os.path.join(article_folder_path, filename)
+            img_path = download_image(hd_url, dest_path, session_cookie)
             _apply_photo_date(img_path, base_dt, downloaded)
             downloaded += 1
     return downloaded
 
 
-def _handle_fallback_images(driver, article_folder_path, session_cookie, base_dt=None):
+def _handle_fallback_images(driver, article_folder_path, session_cookie,
+                            base_dt=None, name_prefix=""):
     """Extrait et télécharge les images directement depuis la page (fallback sans galerie)."""
     raw_urls = extract_image_urls_from_page(driver)
     hd_urls = {}
@@ -226,53 +238,78 @@ def _handle_fallback_images(driver, article_folder_path, session_cookie, base_dt
 
     downloaded = 0
     for hd_url in sorted(hd_urls.values()):
-        img_path = download_image(hd_url, article_folder_path, session_cookie)
+        filename = _build_image_filename(name_prefix, downloaded, hd_url)
+        dest_path = os.path.join(article_folder_path, filename)
+        img_path = download_image(hd_url, dest_path, session_cookie)
         _apply_photo_date(img_path, base_dt, downloaded)
         downloaded += 1
     return downloaded
 
 
+def _build_post_naming(date, title_text, base_dt):
+    """Retourne (folder_name, name_prefix) pour un post.
+
+    Dossier : `YYYY-MM-DD - titre` si la date est parsable, sinon `date FR - titre`.
+    Préfixe fichier : `YYYY-MM-DD_slug` avec dégradés propres si l'un manque.
+    """
+    iso_date = base_dt.strftime("%Y-%m-%d") if base_dt else ""
+    folder_date = iso_date or date
+    folder_label = f"{folder_date} - {title_text}" if title_text else folder_date
+    folder_name = safe_name(folder_label)
+    name_prefix = build_name_prefix(iso_date, slugify(title_text))
+    return folder_name, name_prefix
+
+
+def _try_open_gallery(driver):
+    """Tente d'ouvrir la galerie lightgallery. Retourne True si des images sont visibles."""
+    try:
+        button = driver.find_element(By.CSS_SELECTOR, "button.gallery-trigger")
+    except NoSuchElementException:
+        return False
+    driver.execute_script("arguments[0].click();", button)
+    time.sleep(3)
+    lg_imgs = driver.find_elements(By.XPATH, '//*[contains(@id,"lg-container")]//img')
+    if not lg_imgs:
+        return False
+    logger.info("Galerie ouverte, %d images trouvées.", len(lg_imgs))
+    return True
+
+
+def _close_gallery(driver):
+    """Ferme la galerie lightgallery si un bouton de fermeture est présent."""
+    close_btns = driver.find_elements(By.CSS_SELECTOR, 'button.lg-close')
+    if close_btns:
+        close_btns[0].click()
+        time.sleep(1)
+
+
 def process_post(driver, article_data, save_folder_path, session_cookie=None, years_range=''):
     """Traite un article : ouvre la galerie et télécharge ses images."""
     date, title_text, post_url = article_data
-    folder_name = safe_name(f"{date} - {title_text}" if title_text else date)
-    article_folder_path = os.path.join(save_folder_path, folder_name)
-    os.makedirs(article_folder_path, exist_ok=True)
-    logger.info("Traitement du post : %s", title_text or post_url)
 
     base_dt = parse_french_date(date, years_range)
     if base_dt is None:
         logger.debug("Date non parsable ('%s' + '%s'), EXIF inchangé.", date, years_range)
 
+    folder_name, name_prefix = _build_post_naming(date, title_text, base_dt)
+    article_folder_path = os.path.join(save_folder_path, folder_name)
+    os.makedirs(article_folder_path, exist_ok=True)
+    logger.info("Traitement du post : %s", title_text or post_url)
+
     driver.get(post_url)
     time.sleep(3)
 
-    gallery_opened = False
-    try:
-        button = driver.find_element(By.CSS_SELECTOR, "button.gallery-trigger")
-        driver.execute_script("arguments[0].click();", button)
-        time.sleep(3)
-        lg_imgs = driver.find_elements(By.XPATH, '//*[contains(@id,"lg-container")]//img')
-        if lg_imgs:
-            gallery_opened = True
-            logger.info("Galerie ouverte, %d images trouvées.", len(lg_imgs))
-    except NoSuchElementException:
-        pass
-
-    if gallery_opened:
+    if _try_open_gallery(driver):
         downloaded = _handle_gallery_images(
-            driver, article_folder_path, session_cookie, base_dt
+            driver, article_folder_path, session_cookie, base_dt, name_prefix
         )
         logger.info("%d images téléchargées pour : %s", downloaded, title_text)
-        close_btns = driver.find_elements(By.CSS_SELECTOR, 'button.lg-close')
-        if close_btns:
-            close_btns[0].click()
-            time.sleep(1)
+        _close_gallery(driver)
         return
 
     logger.info("Galerie non ouverte, extraction directe des images pour : %s", title_text)
     downloaded = _handle_fallback_images(
-        driver, article_folder_path, session_cookie, base_dt
+        driver, article_folder_path, session_cookie, base_dt, name_prefix
     )
     logger.info("%d images téléchargées pour : %s", downloaded, title_text)
 
