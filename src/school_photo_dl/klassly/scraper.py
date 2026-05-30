@@ -7,6 +7,7 @@ import time
 import logging
 from datetime import datetime, timedelta
 
+import requests
 from dotenv import load_dotenv
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -93,38 +94,263 @@ def _flush_cdp_json(driver, url_fragment):
     return results
 
 
+_CDP_LOAD_TIMEOUT = 10.0
+_CDP_POLL_INTERVAL = 0.1
+
+
 def _cdp_get_image_body(driver, url):
     """
     Navigue vers l'URL image avec le driver et retourne le contenu binaire
-    via CDP. Le serveur www.klass.ly refuse les requêtes Python mais accepte
-    le browser Chrome : cette méthode contourne le blocage.
+    via CDP. Le serveur www.klass.ly refuse souvent les requêtes Python mais
+    accepte le browser Chrome : cette méthode contourne le blocage.
+
+    Attend `Network.loadingFinished` sur le requestId de l'image (jusqu'à
+    `_CDP_LOAD_TIMEOUT` secondes) au lieu d'un sleep fixe.
     """
     driver.get_log("performance")  # vide le buffer
     driver.get(url)
-    time.sleep(2)
 
-    logs = driver.get_log("performance")
-    for entry in logs:
-        msg = json.loads(entry["message"])["message"]
-        if msg.get("method") != "Network.responseReceived":
-            continue
-        resp = msg["params"]["response"]
-        if resp.get("status") != 200:
-            continue
-        resp_url = resp.get("url", "")
-        if not any(resp_url.lower().endswith(ext) for ext in IMG_EXTS):
-            continue
-        req_id = msg["params"]["requestId"]
-        try:
-            raw = driver.execute_cdp_cmd(
-                "Network.getResponseBody", {"requestId": req_id}
-            )
-            if raw.get("base64Encoded"):
-                return base64.b64decode(raw["body"])
-            return raw["body"].encode()
-        except (WebDriverException, json.JSONDecodeError):
-            pass
+    target_req_id = None
+    deadline = time.monotonic() + _CDP_LOAD_TIMEOUT
+    while time.monotonic() < deadline:
+        for entry in driver.get_log("performance"):
+            msg = json.loads(entry["message"])["message"]
+            method = msg.get("method")
+            params = msg.get("params", {})
+
+            if method == "Network.responseReceived":
+                resp = params.get("response", {})
+                resp_url = resp.get("url", "")
+                if (resp.get("status") == 200
+                        and any(resp_url.lower().endswith(ext) for ext in IMG_EXTS)):
+                    target_req_id = params.get("requestId")
+            elif method == "Network.loadingFinished" and target_req_id:
+                if params.get("requestId") == target_req_id:
+                    try:
+                        raw = driver.execute_cdp_cmd(
+                            "Network.getResponseBody", {"requestId": target_req_id}
+                        )
+                    except (WebDriverException, json.JSONDecodeError):
+                        return None
+                    if raw.get("base64Encoded"):
+                        return base64.b64decode(raw["body"])
+                    return raw["body"].encode()
+
+        time.sleep(_CDP_POLL_INTERVAL)
+
     return None
+
+
+# ---------------------------------------------------------------------------
+# Téléchargement multi-stratégies
+# ---------------------------------------------------------------------------
+
+_JS_PARALLEL_FETCH = r"""
+const urls = arguments[0];
+const concurrency = arguments[1];
+const callback = arguments[arguments.length - 1];
+
+async function fetchOne(url) {
+  try {
+    const r = await fetch(url, {credentials: 'include'});
+    if (!r.ok) return {url, error: 'HTTP ' + r.status};
+    const blob = await r.blob();
+    return await new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const s = reader.result;
+        const idx = s.indexOf(',');
+        resolve({url, data: idx >= 0 ? s.slice(idx + 1) : s});
+      };
+      reader.onerror = () => resolve({url, error: 'reader-error'});
+      reader.readAsDataURL(blob);
+    });
+  } catch (e) {
+    return {url, error: String(e && e.message || e)};
+  }
+}
+
+(async () => {
+  const results = new Array(urls.length);
+  let cursor = 0;
+  async function worker() {
+    while (cursor < urls.length) {
+      const i = cursor++;
+      results[i] = await fetchOne(urls[i]);
+    }
+  }
+  const n = Math.min(concurrency, urls.length);
+  await Promise.all(Array.from({length: n}, () => worker()));
+  callback(results);
+})();
+"""
+
+
+class ImageFetcher:
+    """Stratégie de téléchargement à trois niveaux.
+
+    1. `requests` Python (rapide mais souvent 403 sur klass.ly).
+    2. `fetch()` JS injecté dans Chrome (parallèle, same-origin OK, contourne
+       les blocages anti-bots Python).
+    3. Fallback CDP par navigation Chrome (lent mais toujours fonctionnel).
+
+    Chaque niveau qui échoue est désactivé pour le reste de la session.
+    """
+
+    def __init__(self, driver):
+        self.driver = driver
+        self.session = self._build_session(driver)
+        self._requests_enabled = True
+        self._js_enabled = True
+        self._origin_warmed_up = False
+        try:
+            driver.set_script_timeout(120)
+        except WebDriverException:
+            pass
+
+    @staticmethod
+    def _build_session(driver):
+        session = requests.Session()
+        for cookie in driver.get_cookies():
+            kwargs = {"name": cookie["name"], "value": cookie["value"]}
+            if "domain" in cookie:
+                kwargs["domain"] = cookie["domain"]
+            if "path" in cookie:
+                kwargs["path"] = cookie["path"]
+            try:
+                session.cookies.set(**kwargs)
+            except (TypeError, ValueError):
+                session.cookies.set(cookie["name"], cookie["value"])
+        try:
+            user_agent = driver.execute_script("return navigator.userAgent")
+        except WebDriverException:
+            user_agent = (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            )
+        session.headers.update({
+            "User-Agent": user_agent,
+            "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+            "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8",
+            "Referer": f"{BASE_URL}/",
+            "Sec-Fetch-Dest": "image",
+            "Sec-Fetch-Mode": "no-cors",
+            "Sec-Fetch-Site": "same-site",
+        })
+        return session
+
+    def _try_requests(self, url):
+        if not self._requests_enabled:
+            return None
+        try:
+            resp = self.session.get(url, timeout=30, allow_redirects=True)
+        except requests.RequestException as exc:
+            logger.warning(
+                "requests indisponible (%s) ; bascule sur fetch JS / CDP.", exc,
+            )
+            self._requests_enabled = False
+            return None
+        if resp.status_code == 200 and resp.content:
+            return resp.content
+        logger.warning(
+            "requests refusé (HTTP %s) ; bascule sur fetch JS / CDP.",
+            resp.status_code,
+        )
+        self._requests_enabled = False
+        return None
+
+    def _run_js_fetch(self, urls, concurrency):
+        try:
+            return self.driver.execute_async_script(
+                _JS_PARALLEL_FETCH, urls, concurrency,
+            )
+        except WebDriverException as exc:
+            logger.warning(
+                "execute_async_script échoué (%s) ; bascule en CDP.", exc,
+            )
+            self._js_enabled = False
+            return None
+
+    @staticmethod
+    def _parse_js_results(raw, urls):
+        out = {url: None for url in urls}
+        errors = []
+        for entry in raw or []:
+            url = entry.get("url")
+            if url not in out:
+                continue
+            if entry.get("data"):
+                try:
+                    out[url] = base64.b64decode(entry["data"])
+                except (TypeError, ValueError):
+                    pass
+            elif entry.get("error") and len(errors) < 3:
+                errors.append(entry["error"])
+        return out, errors
+
+    def _warm_up_origin(self, url):
+        """Aligne le document du driver sur www.klass.ly pour rendre fetch JS
+        same-origin. Coût : une navigation Chrome (~quelques centaines de ms).
+        """
+        try:
+            self.driver.get(url)
+        except WebDriverException as exc:
+            logger.warning("warm-up origine échoué (%s).", exc)
+            return False
+        self._origin_warmed_up = True
+        logger.info("Origine alignée sur www.klass.ly pour fetch JS same-origin.")
+        return True
+
+    def _try_js_batch(self, urls, concurrency):
+        """Tente un fetch JS parallèle. Retourne dict[url -> bytes ou None]."""
+        if not self._js_enabled or not urls:
+            return {}
+
+        raw = self._run_js_fetch(urls, concurrency)
+        if raw is None:
+            return {}
+        out, errors = self._parse_js_results(raw, urls)
+        any_ok = any(v is not None for v in out.values())
+
+        # En cas d'échec total, retenter une fois après warm-up de l'origine
+        # (cause probable : CORS fr.klass.ly → www.klass.ly).
+        if not any_ok and not self._origin_warmed_up and self._warm_up_origin(urls[0]):
+            raw = self._run_js_fetch(urls, concurrency)
+            if raw is not None:
+                out, errors = self._parse_js_results(raw, urls)
+                any_ok = any(v is not None for v in out.values())
+
+        if not any_ok:
+            logger.warning(
+                "fetch JS en page bloqué (échantillon : %s) ; bascule en CDP.",
+                errors or "vide",
+            )
+            self._js_enabled = False
+        return out
+
+    def fetch_many(self, urls, concurrency=6):
+        """Télécharge plusieurs URLs en parallèle si possible.
+
+        Retourne dict[url -> bytes ou None].
+        Ordre des stratégies : fetch JS parallèle (si actif) → CDP unitaire
+        pour les URLs encore manquantes.
+        """
+        if not urls:
+            return {}
+        results = self._try_js_batch(urls, concurrency)
+        for url in urls:
+            if results.get(url) is None:
+                # Fallback unitaire : requests (si encore actif) puis CDP.
+                data = self._try_requests(url)
+                if data is None:
+                    data = _cdp_get_image_body(self.driver, url)
+                results[url] = data
+        return results
+
+    def fetch(self, url):
+        """Télécharge une seule URL ; raccourci utilisant `fetch_many`."""
+        return self.fetch_many([url]).get(url)
 
 
 # ---------------------------------------------------------------------------
@@ -220,29 +446,6 @@ def _post_naming(post_id, post):
 # Téléchargement  (via Selenium/CDP car www.klass.ly bloque requests)
 # ---------------------------------------------------------------------------
 
-def download_image(driver, url, dest_path):
-    """
-    Télécharge une image via Selenium+CDP.
-    www.klass.ly et data.klassroom.co refusent les requêtes Python (403)
-    mais acceptent le browser Chrome : on navigue vers l'URL et on capture
-    le corps de réponse via CDP.
-    """
-    if os.path.exists(dest_path):
-        logger.debug("Déjà téléchargé : %s", os.path.basename(dest_path))
-        return False
-
-    data = _cdp_get_image_body(driver, url)
-    if data is None:
-        logger.error("  Échec (aucun corps reçu) : %s", url)
-        return False
-
-    os.makedirs(os.path.dirname(dest_path), exist_ok=True)
-    with open(dest_path, "wb") as out:
-        out.write(data)
-    logger.info("  Téléchargé : %s", os.path.basename(dest_path))
-    return True
-
-
 def _normalize_image_url(url):
     """
     Convertit les URLs data.klassroom.co/img/<UUID>.jpg
@@ -254,42 +457,67 @@ def _normalize_image_url(url):
     )
 
 
-def _download_attachment(driver, att, index, post_ctx):
-    """Télécharge une image attachée et applique la date EXIF si fournie.
-
-    post_ctx : tuple (folder, name_prefix, base_dt) constant pour tout le post.
-    """
-    folder, name_prefix, base_dt = post_ctx
-    url = _normalize_image_url(att.get("url", ""))
-    if not url:
-        return
+def _attachment_filename(index, name_prefix, att):
     ext = (att.get("extension") or "jpg").lstrip(".").lower()
     num = f"{index + 1:03d}"
-    name = f"{num}_{name_prefix}.{ext}" if name_prefix else f"{num}.{ext}"
-    dest = os.path.join(folder, name)
-    download_image(driver, url, dest)
-    if base_dt and os.path.exists(dest):
-        set_image_datetime(dest, base_dt + timedelta(minutes=index))
+    return f"{num}_{name_prefix}.{ext}" if name_prefix else f"{num}.{ext}"
 
 
-def process_post(driver, post_id, post, class_dir):
-    """Télécharge toutes les images attachées à un post dans son dossier."""
+def _plan_post_downloads(post, post_id, class_dir):
+    """Calcule la liste des téléchargements à effectuer pour un post.
+
+    Retourne (folder, base_dt, items) avec items = liste de
+    (index, url, dest, already_present).
+    """
     attachments = post.get("attachments") or {}
     images = [a for a in attachments.values() if a.get("type") == "image"]
     if not images:
-        return
+        return None, None, []
 
     folder_name, name_prefix, base_dt = _post_naming(post_id, post)
     folder = os.path.join(class_dir, folder_name)
-    os.makedirs(folder, exist_ok=True)
-    post_ctx = (folder, name_prefix, base_dt)
-
     sorted_images = sorted(images, key=lambda a: a.get("position", 0))
+
+    items = []
     for index, att in enumerate(sorted_images):
-        _download_attachment(driver, att, index, post_ctx)
+        url = _normalize_image_url(att.get("url", ""))
+        if not url:
+            continue
+        dest = os.path.join(folder, _attachment_filename(index, name_prefix, att))
+        items.append((index, url, dest, os.path.exists(dest)))
+    return folder, base_dt, items
 
 
-def process_class(driver, klass, download_dir):
+def process_post(fetcher, post_id, post, class_dir):
+    """Télécharge toutes les images attachées à un post dans son dossier.
+
+    Les images manquantes sont téléchargées en parallèle via `fetch_many`.
+    """
+    folder, base_dt, items = _plan_post_downloads(post, post_id, class_dir)
+    if not items:
+        return
+
+    missing = [(i, url, dest) for (i, url, dest, exists) in items if not exists]
+    if not missing:
+        return
+
+    os.makedirs(folder, exist_ok=True)
+    urls = [m[1] for m in missing]
+    fetched = fetcher.fetch_many(urls)
+
+    for index, url, dest in missing:
+        data = fetched.get(url)
+        if data is None:
+            logger.error("  Échec (aucun corps reçu) : %s", url)
+            continue
+        with open(dest, "wb") as out:
+            out.write(data)
+        logger.info("  Téléchargé : %s", os.path.basename(dest))
+        if base_dt:
+            set_image_datetime(dest, base_dt + timedelta(minutes=index))
+
+
+def process_class(driver, fetcher, klass, download_dir):
     """Collecte tous les posts d'une classe et télécharge leurs images."""
     class_name = klass["name"]
     class_url = klass["url"]
@@ -304,7 +532,7 @@ def process_class(driver, klass, download_dir):
     logger.info("  %d post(s) collectés.", len(posts))
 
     for post_id, post in posts.items():
-        process_post(driver, post_id, post, class_dir)
+        process_post(fetcher, post_id, post, class_dir)
 
 
 # ---------------------------------------------------------------------------
@@ -333,6 +561,7 @@ def main():
 
     try:
         login(driver, username, password)
+        fetcher = ImageFetcher(driver)
 
         classes = get_classes(driver)
         if not classes:
@@ -340,7 +569,7 @@ def main():
             return
 
         for klass in classes:
-            process_class(driver, klass, download_dir)
+            process_class(driver, fetcher, klass, download_dir)
     finally:
         driver.quit()
 
