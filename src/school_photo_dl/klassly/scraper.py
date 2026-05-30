@@ -5,7 +5,7 @@ import json
 import os
 import time
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from dotenv import load_dotenv
 from selenium.webdriver.common.by import By
@@ -14,7 +14,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import WebDriverException
 
 from school_photo_dl.shared.driver import init_driver
-from school_photo_dl.shared.utils import configure_logging, safe_name
+from school_photo_dl.shared.utils import configure_logging, safe_name, set_image_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -246,7 +246,15 @@ def process_post(driver, post_id, post, class_dir):
     folder = os.path.join(class_dir, post_folder_name(post_id, post))
     os.makedirs(folder, exist_ok=True)
 
-    for att in sorted(images, key=lambda a: a.get("position", 0)):
+    epoch_ms = post.get("date", 0)
+    base_dt = None
+    if epoch_ms:
+        base_dt = datetime.fromtimestamp(epoch_ms / 1000).replace(
+            hour=10, minute=0, second=0, microsecond=0
+        )
+
+    sorted_images = sorted(images, key=lambda a: a.get("position", 0))
+    for index, att in enumerate(sorted_images):
         url = _normalize_image_url(att.get("url", ""))
         if not url:
             continue
@@ -257,6 +265,8 @@ def process_post(driver, post_id, post, class_dir):
             name = f"{pos:03d}_{name}"
         dest = os.path.join(folder, name)
         download_image(driver, url, dest)
+        if base_dt and os.path.exists(dest):
+            set_image_datetime(dest, base_dt + timedelta(minutes=index))
 
 
 def process_class(driver, klass, download_dir):

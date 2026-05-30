@@ -4,6 +4,7 @@ import os
 import re
 import time
 import logging
+from datetime import timedelta
 
 from dotenv import load_dotenv
 from selenium.common.exceptions import NoSuchElementException
@@ -11,7 +12,12 @@ from selenium.webdriver.common.by import By
 import requests
 
 from school_photo_dl.shared.driver import init_driver
-from school_photo_dl.shared.utils import configure_logging, safe_name
+from school_photo_dl.shared.utils import (
+    configure_logging,
+    parse_french_date,
+    safe_name,
+    set_image_datetime,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -65,11 +71,19 @@ def get_spaces(session_cookie):
     for space in data['spaces']:
         logger.info("UUID: %s, Année : %s, Nom : %s",
                     space['uuid'], space['display_years'], space['display_name'])
-        spaces.append({'name': space['display_name'], 'uuid': space['uuid']})
+        spaces.append({
+            'name': space['display_name'],
+            'uuid': space['uuid'],
+            'years': space.get('display_years', ''),
+        })
     for space in data.get('spaces_soon_archived', []):
         logger.info("UUID: %s, Année : %s, Nom (archivé) : %s",
                     space['uuid'], space['display_years'], space['display_name'])
-        spaces.append({'name': space['display_name'], 'uuid': space['uuid']})
+        spaces.append({
+            'name': space['display_name'],
+            'uuid': space['uuid'],
+            'years': space.get('display_years', ''),
+        })
     return spaces
 
 
@@ -114,21 +128,23 @@ def collect_article_data(driver):
 
 
 def download_image(hd_img_url, article_folder_path, session_cookie=None):
-    """Télécharge une image HD et la sauvegarde localement."""
+    """Télécharge une image HD et la sauvegarde localement. Retourne le chemin ou None."""
     clean_img_url = re.sub(r'\?.*$', '', hd_img_url)
+    img_name = os.path.basename(clean_img_url)
+    img_path = os.path.join(article_folder_path, img_name)
+    if os.path.exists(img_path):
+        logger.debug("Déjà téléchargée : %s", img_name)
+        return img_path
     try:
-        img_name = os.path.basename(clean_img_url)
-        img_path = os.path.join(article_folder_path, img_name)
-        if os.path.exists(img_path):
-            logger.debug("Déjà téléchargée : %s", img_name)
-            return
         cookies = {'diedm_session': session_cookie} if session_cookie else {}
         img_data = requests.get(clean_img_url, cookies=cookies, timeout=30).content
         with open(img_path, 'wb') as img_file:
             img_file.write(img_data)
         logger.info("Image sauvegardée : %s", img_name)
+        return img_path
     except Exception as err:  # pylint: disable=broad-except
         logger.error("Erreur téléchargement %s : %s", clean_img_url, err)
+        return None
 
 
 def extract_image_urls_from_page(driver):
@@ -160,7 +176,14 @@ def extract_image_urls_from_page(driver):
     return urls
 
 
-def _handle_gallery_images(driver, article_folder_path, session_cookie):
+def _apply_photo_date(img_path, base_dt, index):
+    """Applique base_dt + index minutes à l'image si base_dt est défini."""
+    if base_dt is None or img_path is None:
+        return
+    set_image_datetime(img_path, base_dt + timedelta(minutes=index))
+
+
+def _handle_gallery_images(driver, article_folder_path, session_cookie, base_dt=None):
     """Gère la pagination lightgallery et télécharge les images ; retourne le nombre téléchargé."""
     images = driver.find_elements(By.XPATH, '//*[contains(@id,"lg-container")]//img')
     if len(images) == 26:
@@ -184,12 +207,15 @@ def _handle_gallery_images(driver, article_folder_path, session_cookie):
     for img in images:
         src = img.get_attribute('src') or ''
         if 'thumbs' in src:
-            download_image(src.replace('thumbs', 'hd'), article_folder_path, session_cookie)
+            img_path = download_image(
+                src.replace('thumbs', 'hd'), article_folder_path, session_cookie
+            )
+            _apply_photo_date(img_path, base_dt, downloaded)
             downloaded += 1
     return downloaded
 
 
-def _handle_fallback_images(driver, article_folder_path, session_cookie):
+def _handle_fallback_images(driver, article_folder_path, session_cookie, base_dt=None):
     """Extrait et télécharge les images directement depuis la page (fallback sans galerie)."""
     raw_urls = extract_image_urls_from_page(driver)
     hd_urls = {}
@@ -199,19 +225,24 @@ def _handle_fallback_images(driver, article_folder_path, session_cookie):
         hd_urls[os.path.basename(hd_clean)] = hd_clean
 
     downloaded = 0
-    for hd_url in hd_urls.values():
-        download_image(hd_url, article_folder_path, session_cookie)
+    for hd_url in sorted(hd_urls.values()):
+        img_path = download_image(hd_url, article_folder_path, session_cookie)
+        _apply_photo_date(img_path, base_dt, downloaded)
         downloaded += 1
     return downloaded
 
 
-def process_post(driver, article_data, save_folder_path, session_cookie=None):
+def process_post(driver, article_data, save_folder_path, session_cookie=None, years_range=''):
     """Traite un article : ouvre la galerie et télécharge ses images."""
     date, title_text, post_url = article_data
     folder_name = safe_name(f"{date} - {title_text}" if title_text else date)
     article_folder_path = os.path.join(save_folder_path, folder_name)
     os.makedirs(article_folder_path, exist_ok=True)
     logger.info("Traitement du post : %s", title_text or post_url)
+
+    base_dt = parse_french_date(date, years_range)
+    if base_dt is None:
+        logger.debug("Date non parsable ('%s' + '%s'), EXIF inchangé.", date, years_range)
 
     driver.get(post_url)
     time.sleep(3)
@@ -229,7 +260,9 @@ def process_post(driver, article_data, save_folder_path, session_cookie=None):
         pass
 
     if gallery_opened:
-        downloaded = _handle_gallery_images(driver, article_folder_path, session_cookie)
+        downloaded = _handle_gallery_images(
+            driver, article_folder_path, session_cookie, base_dt
+        )
         logger.info("%d images téléchargées pour : %s", downloaded, title_text)
         close_btns = driver.find_elements(By.CSS_SELECTOR, 'button.lg-close')
         if close_btns:
@@ -238,7 +271,9 @@ def process_post(driver, article_data, save_folder_path, session_cookie=None):
         return
 
     logger.info("Galerie non ouverte, extraction directe des images pour : %s", title_text)
-    downloaded = _handle_fallback_images(driver, article_folder_path, session_cookie)
+    downloaded = _handle_fallback_images(
+        driver, article_folder_path, session_cookie, base_dt
+    )
     logger.info("%d images téléchargées pour : %s", downloaded, title_text)
 
 
@@ -253,9 +288,10 @@ def process_space(driver, space, base_download_dir, session_cookie=None):
     time.sleep(5)
 
     articles_data = collect_article_data(driver)
+    years_range = space.get('years', '')
 
     for article_data in articles_data:
-        process_post(driver, article_data, save_folder_path, session_cookie)
+        process_post(driver, article_data, save_folder_path, session_cookie, years_range)
 
 
 def main():

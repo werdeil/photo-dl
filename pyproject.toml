@@ -30,6 +30,7 @@ classifiers = [
 ]
 dependencies = [
     "beautifulsoup4>=4.13",
+    "Pillow>=10.0",
     "python-dotenv>=1.0",
     "requests>=2.32",
     "selenium>=4.33",
