@@ -1,11 +1,68 @@
 [build-system]
-requires = ["setuptools>=64"]
+requires = ["setuptools>=64", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "photo-dl"
+name = "school-photo-dl"
 version = "0.1.0"
+description = "Téléchargeurs de photos pour plateformes scolaires françaises (toutemonannee.com, fr.klass.ly)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Vincent Werdeil", email = "werdeil@hotmail.com" },
+]
+keywords = ["scraper", "selenium", "toutemonannee", "klassly", "photos", "school"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "Natural Language :: French",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Multimedia :: Graphics",
+]
+dependencies = [
+    "beautifulsoup4>=4.13",
+    "python-dotenv>=1.0",
+    "requests>=2.32",
+    "selenium>=4.33",
+    "webdriver-manager>=4.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "build>=1.2",
+    "pylint>=4.0",
+    "pytest>=8.0",
+    "twine>=5.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/werdeil/school-photo-dl"
+Repository = "https://github.com/werdeil/school-photo-dl"
+Issues = "https://github.com/werdeil/school-photo-dl/issues"
+
+[project.scripts]
+school-photo-dl = "school_photo_dl.cli:main"
 
 [tool.setuptools.packages.find]
-where = ["."]
-include = ["shared*"]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.pylint.main]
+ignore-paths = ["^\\.venv/.*$"]
+
+[tool.pylint."messages control"]
+disable = [
+    "missing-module-docstring",
+    "too-few-public-methods",
+]

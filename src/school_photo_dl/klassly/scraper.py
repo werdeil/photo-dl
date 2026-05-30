@@ -13,11 +13,9 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import WebDriverException
 
-from shared.driver import init_driver
-from shared.utils import configure_logging, safe_name
+from school_photo_dl.shared.driver import init_driver
+from school_photo_dl.shared.utils import configure_logging, safe_name
 
-load_dotenv()
-configure_logging()
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://fr.klass.ly"
@@ -285,6 +283,9 @@ def process_class(driver, klass, download_dir):
 
 def main():
     """Point d'entrée : charge la config, authentifie et télécharge toutes les classes."""
+    load_dotenv()
+    configure_logging()
+
     download_dir = os.getenv("KLASSLY_DOWNLOAD_DIR")
     if not download_dir:
         raise EnvironmentError("KLASSLY_DOWNLOAD_DIR non défini dans .env")

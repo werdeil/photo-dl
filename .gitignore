@@ -4,4 +4,14 @@ __pycache__/
 .env
 .claude/
 .vscode/
+
+# Build / packaging
 *.egg-info/
+build/
+dist/
+.eggs/
+
+# Tests / coverage
+.pytest_cache/
+.coverage
+htmlcov/

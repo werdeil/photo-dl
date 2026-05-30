@@ -10,17 +10,11 @@ from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.common.by import By
 import requests
 
-from shared.driver import init_driver
-from shared.utils import configure_logging, safe_name
+from school_photo_dl.shared.driver import init_driver
+from school_photo_dl.shared.utils import configure_logging, safe_name
 
-load_dotenv()
-configure_logging()
 logger = logging.getLogger(__name__)
 
-_download_dir = os.getenv('TMA_DOWNLOAD_DIR')
-if not _download_dir:
-    raise EnvironmentError("TMA_DOWNLOAD_DIR is not set in .env")
-BASE_DOWNLOAD_DIR = os.path.expanduser(_download_dir)
 BASE_TMA_URL = 'https://www.toutemonannee.com'
 DASHBOARD_URL = f'{BASE_TMA_URL}/dashboard'
 
@@ -248,11 +242,11 @@ def process_post(driver, article_data, save_folder_path, session_cookie=None):
     logger.info("%d images téléchargées pour : %s", downloaded, title_text)
 
 
-def process_space(driver, space, session_cookie=None):
+def process_space(driver, space, base_download_dir, session_cookie=None):
     """Traite un espace/album : collecte les articles et les télécharge."""
     url = f"{BASE_TMA_URL}/journal/{space['uuid']}"
     logger.info("Traitement de l'espace : %s — %s", space['name'], url)
-    save_folder_path = os.path.join(BASE_DOWNLOAD_DIR, space['name'])
+    save_folder_path = os.path.join(base_download_dir, space['name'])
     driver.add_cookie({'name': f'noShowAlbumPopupAnymore_{space["uuid"]}', 'value': '1'})
     driver.add_cookie({'name': 'noShowSouvenirPopupAnymore', 'value': '1'})
     driver.get(url)
@@ -266,6 +260,14 @@ def process_space(driver, space, session_cookie=None):
 
 def main():
     """Point d'entrée principal : initialise le driver et traite tous les espaces."""
+    load_dotenv()
+    configure_logging()
+
+    download_dir = os.getenv('TMA_DOWNLOAD_DIR')
+    if not download_dir:
+        raise EnvironmentError("TMA_DOWNLOAD_DIR is not set in .env")
+    base_download_dir = os.path.expanduser(download_dir)
+
     headless = os.getenv('TMA_HEADLESS', 'true').lower() != 'false'
     driver = init_driver(headless=headless)
     try:
@@ -276,10 +278,10 @@ def main():
         time.sleep(5)
         spaces = get_spaces(session_cookie)
         for space in spaces:
-            process_space(driver, space, session_cookie)
+            process_space(driver, space, base_download_dir, session_cookie)
     finally:
         driver.quit()
-    logger.info("Terminé. Images dans : %s", BASE_DOWNLOAD_DIR)
+    logger.info("Terminé. Images dans : %s", base_download_dir)
 
 
 if __name__ == "__main__":
