@@ -31,6 +31,13 @@ def test_cli_parser_builds():
     assert args.command == "klassly"
 
 
+def test_cli_parser_no_command_is_auto_mode():
+    """Sans sous-commande, command vaut None (mode auto basé sur .env)."""
+    parser = build_parser()
+    args = parser.parse_args([])
+    assert args.command is None
+
+
 def test_safe_name():
     """safe_name remplace les caractères interdits par des underscores."""
     assert safe_name("hello/world") == "hello_world"

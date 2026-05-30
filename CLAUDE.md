@@ -64,8 +64,14 @@ CLI unifiée installée par `pip install` :
 ```bash
 school-photo-dl tma           # toutemonannee.com
 school-photo-dl klassly       # klass.ly
+school-photo-dl               # auto : lit .env et enchaîne les plateformes configurées
 school-photo-dl --version
 ```
+
+Mode auto (sans sous-commande) : [src/school_photo_dl/cli.py](src/school_photo_dl/cli.py)
+`_run_auto()` charge `.env`, détecte les plateformes avec identifiants présents
+(`TMA_USERNAME`/`TMA_PASSWORD`, `KLASSLY_USERNAME`/`KLASSLY_PASSWORD`) et appelle
+les `main()` correspondants en séquence. Sortie code 1 si aucune n'est configurée.
 
 Pour exécuter sans installer (dev) :
 

@@ -55,6 +55,13 @@ school-photo-dl klassly    # télécharge depuis fr.klass.ly
 school-photo-dl --version
 ```
 
+Sans sous-commande, la CLI lit `.env` et lance en séquence toutes les
+plateformes pour lesquelles les identifiants sont renseignés :
+
+```bash
+school-photo-dl            # auto : TMA puis Klassly si les deux sont configurés
+```
+
 ### Arborescence de sortie
 
 - TMA : `{DOWNLOAD_DIR}/{nom_espace}/{date} - {titre}/*.jpg`
