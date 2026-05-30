@@ -263,12 +263,12 @@ def main():
     load_dotenv()
     configure_logging()
 
-    download_dir = os.getenv('TMA_DOWNLOAD_DIR')
+    download_dir = os.getenv('DOWNLOAD_DIR')
     if not download_dir:
-        raise EnvironmentError("TMA_DOWNLOAD_DIR is not set in .env")
+        raise EnvironmentError("DOWNLOAD_DIR is not set in .env")
     base_download_dir = os.path.expanduser(download_dir)
 
-    headless = os.getenv('TMA_HEADLESS', 'true').lower() != 'false'
+    headless = os.getenv('HEADLESS', 'true').lower() != 'false'
     driver = init_driver(headless=headless)
     try:
         driver.get(DASHBOARD_URL)

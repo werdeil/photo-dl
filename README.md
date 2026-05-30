@@ -24,13 +24,18 @@ Les identifiants et le dossier de téléchargement sont lus depuis les variables
 d'environnement (chargées depuis un fichier `.env` du dossier courant si
 présent). Voir [`.env.example`](.env.example).
 
+### Partagé
+
+```bash
+DOWNLOAD_DIR="/chemin/vers/dossier"
+HEADLESS="true"   # "false" pour voir le navigateur
+```
+
 ### toutemonannee.com
 
 ```bash
 TMA_USERNAME="email@example.com"
 TMA_PASSWORD="motdepasse"
-TMA_DOWNLOAD_DIR="/chemin/vers/dossier"
-TMA_HEADLESS="true"   # "false" pour voir le navigateur
 ```
 
 ### fr.klass.ly
@@ -38,8 +43,6 @@ TMA_HEADLESS="true"   # "false" pour voir le navigateur
 ```bash
 KLASSLY_USERNAME="+33600000000"
 KLASSLY_PASSWORD="motdepasse"
-KLASSLY_DOWNLOAD_DIR="/chemin/vers/dossier"
-KLASSLY_HEADLESS="true"
 ```
 
 ## Utilisation
@@ -54,8 +57,8 @@ school-photo-dl --version
 
 ### Arborescence de sortie
 
-- TMA : `{TMA_DOWNLOAD_DIR}/{nom_espace}/{date} - {titre}/*.jpg`
-- Klassly : `{KLASSLY_DOWNLOAD_DIR}/{nom_classe}/{YYYY-MM-DD} - {texte_post}/*.jpg`
+- TMA : `{DOWNLOAD_DIR}/{nom_espace}/{date} - {titre}/*.jpg`
+- Klassly : `{DOWNLOAD_DIR}/{nom_classe}/{YYYY-MM-DD} - {texte_post}/*.jpg`
 
 ## Développement
 

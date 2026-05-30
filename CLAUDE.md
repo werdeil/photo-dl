@@ -40,15 +40,17 @@ pip install -e ".[dev]"            # éditable + outils dev (pytest, build, twin
 Auth via `.env` à la racine (voir [.env.example](.env.example)) :
 
 ```bash
+# Partagé
+DOWNLOAD_DIR="/chemin/vers/dossier"
+HEADLESS="true"
+
+# toutemonannee.com
 TMA_USERNAME="email@example.com"
 TMA_PASSWORD="motdepasse"
-TMA_DOWNLOAD_DIR="/chemin/vers/dossier"
-TMA_HEADLESS="true"
 
+# fr.klass.ly
 KLASSLY_USERNAME="+33600000000"
 KLASSLY_PASSWORD="motdepasse"
-KLASSLY_DOWNLOAD_DIR="/chemin/vers/dossier"
-KLASSLY_HEADLESS="true"
 ```
 
 Dépendances déclarées dans [pyproject.toml](pyproject.toml) (pas de `requirements.txt`).
@@ -87,8 +89,8 @@ twine check dist/*
 # Publication : push d'un tag `vX.Y.Z` déclenche .github/workflows/publish.yml
 ```
 
-TMA downloads vers `TMA_DOWNLOAD_DIR`, organisés en `{space_name}/{date} - {title}/`.
-Klassly downloads vers `KLASSLY_DOWNLOAD_DIR`, organisés en `{class_name}/{YYYY-MM-DD} - {post_text}/`.
+TMA downloads vers `DOWNLOAD_DIR`, organisés en `{space_name}/{date} - {title}/`.
+Klassly downloads vers `DOWNLOAD_DIR`, organisés en `{class_name}/{YYYY-MM-DD} - {post_text}/`.
 
 ## Architecture
 
@@ -111,7 +113,7 @@ main()                                # charge .env + configure logging ici (pas
 - **Image URL normalization**: URLs contenant `"thumbs"` réécrites vers `"hd"` ; query strings strippées.
 - **Carousel pagination**: les articles peuvent avoir >25 ou >50 images ; `_handle_gallery_images()` clique les contrôles "page précédente" pour les deux cas.
 - **Fallback sans galerie**: `_handle_fallback_images()` scanne `<img>`, `background-image` et `data-src` quand la galerie ne s'ouvre pas.
-- **Output path**: `TMA_DOWNLOAD_DIR` (obligatoire, lève `EnvironmentError`) ; lu dans `main()`, **pas** au niveau module (sinon `import school_photo_dl.tma` planterait sans `.env`).
+- **Output path**: `DOWNLOAD_DIR` (obligatoire, lève `EnvironmentError`) ; lu dans `main()`, **pas** au niveau module (sinon `import school_photo_dl.tma` planterait sans `.env`).
 
 ### Flow dans `src/school_photo_dl/klassly/scraper.py`
 
@@ -131,7 +133,7 @@ main()                                # charge .env + configure logging ici
 - **Classes**: extraites du champ `klasses` de `app.connect` capturé via CDP lors de la navigation `/class`.
 - **Posts**: `klass.history` capturé via CDP pendant scroll ; dict keyed par postID avec `attachments` embarqués.
 - **Image download**: `www.klass.ly` et `data.klassroom.co` bloquent Python `requests` (403) mais acceptent Chrome → on navigue avec le driver puis on récupère le corps via `Network.getResponseBody`. URLs normalisées de `data.klassroom.co/img/` vers `www.klass.ly/_data/img/`.
-- **Output path**: `KLASSLY_DOWNLOAD_DIR` (obligatoire) ; lu dans `main()`. `KLASSLY_HEADLESS=false` pour mode visible.
+- **Output path**: `DOWNLOAD_DIR` (obligatoire) ; lu dans `main()`. `HEADLESS=false` pour mode visible.
 
 ### Shared
 

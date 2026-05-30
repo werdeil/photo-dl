@@ -286,9 +286,9 @@ def main():
     load_dotenv()
     configure_logging()
 
-    download_dir = os.getenv("KLASSLY_DOWNLOAD_DIR")
+    download_dir = os.getenv("DOWNLOAD_DIR")
     if not download_dir:
-        raise EnvironmentError("KLASSLY_DOWNLOAD_DIR non défini dans .env")
+        raise EnvironmentError("DOWNLOAD_DIR non défini dans .env")
     download_dir = os.path.expanduser(download_dir)
 
     username = os.getenv("KLASSLY_USERNAME")
@@ -298,7 +298,7 @@ def main():
             "KLASSLY_USERNAME / KLASSLY_PASSWORD non définis dans .env"
         )
 
-    headless = os.getenv("KLASSLY_HEADLESS", "true").lower() != "false"
+    headless = os.getenv("HEADLESS", "true").lower() != "false"
     driver = init_driver(headless=headless, enable_cdp=True)
 
     try:
