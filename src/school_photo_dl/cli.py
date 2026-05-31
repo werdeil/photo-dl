@@ -17,7 +17,7 @@ def build_parser():
     """Construit le parser argparse avec les sous-commandes."""
     parser = argparse.ArgumentParser(
         prog="school-photo-dl",
-        description="Téléchargeurs de photos pour plateformes scolaires françaises. "
+        description="Téléchargeur de photos pour plateformes scolaires françaises. "
         "Sans sous-commande, lance les plateformes configurées dans .env.",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
