@@ -128,9 +128,9 @@ def _run_auto():
             return 1
 
     skipped = [p for p in _REQUIRED_ENV if p not in available]
-    msg = "Mode auto : à traiter → %s" % ", ".join(available)
+    msg = f"Mode auto : à traiter → {', '.join(available)}"
     if skipped:
-        msg += " | ignoré (identifiants absents) → %s" % ", ".join(skipped)
+        msg += f" | ignoré (identifiants absents) → {', '.join(skipped)}"
     logging.info(msg)
     exit_code = 0
     for platform in available:

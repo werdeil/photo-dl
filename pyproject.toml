@@ -4,14 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "school-photo-dl"
-version = "0.1.0"
-description = "Téléchargeurs de photos pour plateformes scolaires françaises (toutemonannee.com, fr.klass.ly)."
+version = "0.1.1"
+description = "Téléchargeur de photos pour plateformes scolaires françaises (toutemonannee.com, fr.klass.ly)."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "GPL-3.0-or-later"
 license-files = ["LICENSE"]
 authors = [
-    { name = "Vincent Werdeil", email = "werdeil@hotmail.com" },
+    { name = "Vincent Verdeil", email = "werdeil@hotmail.com" },
 ]
 keywords = ["scraper", "selenium", "toutemonannee", "klassly", "photos", "school"]
 classifiers = [
