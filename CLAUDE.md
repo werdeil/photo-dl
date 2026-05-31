@@ -64,16 +64,31 @@ Packages clés : `selenium>=4.33`, `requests>=2.32`, `webdriver-manager>=4.0`,
 CLI unifiée installée par `pip install` :
 
 ```bash
+school-photo-dl config        # crée/édite .env interactivement (questions à l'utilisateur)
 school-photo-dl tma           # toutemonannee.com
 school-photo-dl klassly       # klass.ly
 school-photo-dl               # auto : lit .env et enchaîne les plateformes configurées
 school-photo-dl --version
 ```
 
+La sous-commande `config` ([src/school_photo_dl/config_cmd.py](src/school_photo_dl/config_cmd.py))
+`run_config()` lit le `.env` du cwd s'il existe (valeurs proposées comme défauts,
+Entrée vide = inchangé ; `DOWNLOAD_DIR` défaut `~/Photos/school-photo-dl`), pose les
+questions section par section (mots de passe via `getpass`, sans écho) et réécrit le
+fichier au format de [.env.example](.env.example) avec permissions `0600`.
+
+Les sous-commandes `tma`/`klassly` appellent `_ensure_configured(platform)` avant de
+lancer le scraper : si une variable requise manque (`DOWNLOAD_DIR` + identifiants de la
+plateforme), l'assistant `config` est lancé automatiquement, puis le `.env` est rechargé
+(`load_dotenv(override=True)`). Si des variables manquent toujours, sortie code 1.
+
 Mode auto (sans sous-commande) : [src/school_photo_dl/cli.py](src/school_photo_dl/cli.py)
 `_run_auto()` charge `.env`, détecte les plateformes avec identifiants présents
 (`TMA_USERNAME`/`TMA_PASSWORD`, `KLASSLY_USERNAME`/`KLASSLY_PASSWORD`) et appelle
-les `main()` correspondants en séquence. Sortie code 1 si aucune n'est configurée.
+les `main()` correspondants en séquence. Si **aucune** n'est détectée, lance
+l'assistant `config`, recharge `.env` (`override=True`) et redétecte ; abandon code 1
+s'il n'y a toujours rien. Chaque plateforme retenue passe ensuite par
+`_ensure_configured` (qui vérifie aussi `DOWNLOAD_DIR` et relance `config` au besoin).
 
 Pour exécuter sans installer (dev) :
 

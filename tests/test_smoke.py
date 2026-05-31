@@ -26,6 +26,8 @@ def test_cli_parser_builds():
     assert args.command == "tma"
     args = parser.parse_args(["klassly"])
     assert args.command == "klassly"
+    args = parser.parse_args(["config"])
+    assert args.command == "config"
 
 
 def test_cli_parser_no_command_is_auto_mode():

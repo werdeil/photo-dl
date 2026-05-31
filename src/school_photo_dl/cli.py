@@ -20,10 +20,53 @@ def build_parser():
         "Sans sous-commande, lance les plateformes configurées dans .env.",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
-    sub = parser.add_subparsers(dest="command", metavar="{tma,klassly}")
+    sub = parser.add_subparsers(dest="command", metavar="{config,tma,klassly}")
+    sub.add_parser("config", help="Configurer le fichier .env de façon interactive")
     sub.add_parser("tma", help="Télécharger depuis toutemonannee.com")
     sub.add_parser("klassly", help="Télécharger depuis fr.klass.ly")
     return parser
+
+
+# Variables d'environnement requises par plateforme (DOWNLOAD_DIR partagé inclus).
+_REQUIRED_ENV = {
+    "tma": ("DOWNLOAD_DIR", "TMA_USERNAME", "TMA_PASSWORD"),
+    "klassly": ("DOWNLOAD_DIR", "KLASSLY_USERNAME", "KLASSLY_PASSWORD"),
+}
+
+
+def _ensure_configured(platform):
+    """Vérifie les variables requises ; lance `config` si certaines manquent.
+
+    Retourne True si la plateforme est prête à tourner, False si l'utilisateur n'a
+    finalement pas renseigné tout le nécessaire.
+    """
+    # pylint: disable=import-outside-toplevel  # lazy: dotenv pas requis pour `config`
+    from dotenv import load_dotenv
+    load_dotenv()
+
+    missing = [k for k in _REQUIRED_ENV[platform] if not os.getenv(k)]
+    if not missing:
+        return True
+
+    print(
+        f"Configuration manquante pour '{platform}' ({', '.join(missing)}). "
+        "Lancement de l'assistant de configuration.\n",
+        file=sys.stderr,
+    )
+    from school_photo_dl.config_cmd import run_config
+    run_config()
+    # Recharge le .env fraîchement écrit en écrasant les valeurs déjà en mémoire.
+    load_dotenv(override=True)
+
+    still_missing = [k for k in _REQUIRED_ENV[platform] if not os.getenv(k)]
+    if still_missing:
+        print(
+            f"Variables toujours manquantes : {', '.join(still_missing)}. "
+            "Relancez la commande après avoir complété la configuration.",
+            file=sys.stderr,
+        )
+        return False
+    return True
 
 
 def _run_tma():
@@ -52,24 +95,43 @@ def _detect_available_platforms():
     return available
 
 
+_RUNNERS = {"tma": _run_tma, "klassly": _run_klassly}
+
+
 def _run_auto():
-    """Détecte les plateformes configurées dans .env et les lance en séquence."""
+    """Détecte les plateformes configurées dans .env et les lance en séquence.
+
+    Si aucune n'est détectée, lance l'assistant `config` puis redétecte. Chaque
+    plateforme passe par `_ensure_configured` (qui vérifie aussi `DOWNLOAD_DIR`).
+    """
     available = _detect_available_platforms()
     if not available:
         print(
-            "Aucune plateforme configurée : renseignez TMA_USERNAME/TMA_PASSWORD "
-            "et/ou KLASSLY_USERNAME/KLASSLY_PASSWORD dans .env.",
+            "Aucune plateforme configurée. Lancement de l'assistant de configuration.\n",
             file=sys.stderr,
         )
-        return 1
+        # pylint: disable=import-outside-toplevel  # lazy: pas besoin du module hors de ce cas
+        from school_photo_dl.config_cmd import run_config
+        from dotenv import load_dotenv
+        run_config()
+        load_dotenv(override=True)
+        available = _detect_available_platforms()
+        if not available:
+            print(
+                "Toujours aucune plateforme configurée : renseignez les identifiants "
+                "TMA et/ou Klassly. Abandon.",
+                file=sys.stderr,
+            )
+            return 1
 
     logging.info("Mode auto : exécution séquentielle de %s", ", ".join(available))
+    exit_code = 0
     for platform in available:
-        if platform == "tma":
-            _run_tma()
-        elif platform == "klassly":
-            _run_klassly()
-    return 0
+        if not _ensure_configured(platform):
+            exit_code = 1
+            continue
+        _RUNNERS[platform]()
+    return exit_code
 
 
 def main(argv=None):
@@ -79,12 +141,15 @@ def main(argv=None):
     if args.command is None:
         return _run_auto()
 
-    if args.command == "tma":
-        _run_tma()
-        return 0
+    if args.command == "config":
+        # pylint: disable=import-outside-toplevel  # lazy: pas besoin du module pour les autres commandes
+        from school_photo_dl.config_cmd import run_config
+        return run_config()
 
-    if args.command == "klassly":
-        _run_klassly()
+    if args.command in _RUNNERS:
+        if not _ensure_configured(args.command):
+            return 1
+        _RUNNERS[args.command]()
         return 0
 
     return 1
