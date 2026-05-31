@@ -10,6 +10,7 @@ import os
 import sys
 
 from school_photo_dl import __version__
+from school_photo_dl.shared.utils import configure_logging
 
 
 def build_parser():
@@ -72,12 +73,14 @@ def _ensure_configured(platform):
 def _run_tma():
     # pylint: disable=import-outside-toplevel  # lazy: n'importe pas le scraper klassly inutilement
     from school_photo_dl.tma.scraper import main as tma_main
+    logging.info("Démarrage du scraper toutemonannee.com (TMA)")
     tma_main()
 
 
 def _run_klassly():
     # pylint: disable=import-outside-toplevel  # lazy: n'importe pas le scraper tma inutilement
     from school_photo_dl.klassly.scraper import main as klassly_main
+    logging.info("Démarrage du scraper fr.klass.ly (Klassly)")
     klassly_main()
 
 
@@ -124,7 +127,11 @@ def _run_auto():
             )
             return 1
 
-    logging.info("Mode auto : exécution séquentielle de %s", ", ".join(available))
+    skipped = [p for p in _REQUIRED_ENV if p not in available]
+    msg = "Mode auto : à traiter → %s" % ", ".join(available)
+    if skipped:
+        msg += " | ignoré (identifiants absents) → %s" % ", ".join(skipped)
+    logging.info(msg)
     exit_code = 0
     for platform in available:
         if not _ensure_configured(platform):
@@ -136,6 +143,7 @@ def _run_auto():
 
 def main(argv=None):
     """Point d'entrée console."""
+    configure_logging()
     args = build_parser().parse_args(argv)
 
     if args.command is None:
