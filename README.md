@@ -21,25 +21,45 @@ ChromeDriver est récupéré automatiquement par
 
 ## Configuration
 
+### Assistant interactif (recommandé)
+
+La façon la plus simple de configurer l'outil est la commande `config`, qui pose
+les questions une à une et génère (ou met à jour) le fichier `.env` pour vous :
+
+```bash
+school-photo-dl config
+```
+
+Elle propose des valeurs par défaut (dossier de téléchargement `~/Photos/school-photo-dl`),
+réutilise les valeurs existantes si un `.env` est déjà présent (Entrée = inchangé)
+et masque la saisie des mots de passe. Vous pouvez laisser vides les identifiants
+d'une plateforme que vous n'utilisez pas.
+
+> Pas besoin de lancer `config` au préalable : si vous exécutez `school-photo-dl`,
+> `school-photo-dl tma` ou `school-photo-dl klassly` alors qu'une variable requise
+> manque, l'assistant se lance automatiquement.
+
+### Configuration manuelle
+
 Les identifiants et le dossier de téléchargement sont lus depuis les variables
 d'environnement (chargées depuis un fichier `.env` du dossier courant si
 présent). Voir [`.env.example`](.env.example).
 
-### Partagé
+#### Partagé
 
 ```bash
 DOWNLOAD_DIR="/chemin/vers/dossier"
 HEADLESS="true"   # "false" pour voir le navigateur
 ```
 
-### toutemonannee.com
+#### toutemonannee.com
 
 ```bash
 TMA_USERNAME="email@example.com"
 TMA_PASSWORD="motdepasse"
 ```
 
-### fr.klass.ly
+#### fr.klass.ly
 
 ```bash
 KLASSLY_USERNAME="+33600000000"
@@ -48,9 +68,10 @@ KLASSLY_PASSWORD="motdepasse"
 
 ## Utilisation
 
-Une seule commande, deux sous-commandes :
+Une seule commande, plusieurs sous-commandes :
 
 ```bash
+school-photo-dl config     # configure le fichier .env de façon interactive
 school-photo-dl tma        # télécharge depuis toutemonannee.com
 school-photo-dl klassly    # télécharge depuis fr.klass.ly
 school-photo-dl --version
@@ -62,6 +83,14 @@ plateformes pour lesquelles les identifiants sont renseignés :
 ```bash
 school-photo-dl            # auto : TMA puis Klassly si les deux sont configurés
 ```
+
+Si aucune variable n'est configurée (premier lancement, `.env` absent ou
+incomplet), la CLI **lance automatiquement l'assistant `config`** pour vous
+guider, puis enchaîne avec les téléchargements. Cela vaut aussi pour
+`school-photo-dl tma` / `school-photo-dl klassly` : si une variable requise
+(`DOWNLOAD_DIR` ou les identifiants de la plateforme) manque, l'assistant
+s'ouvre avant de poursuivre. Inutile donc de lancer `config` manuellement au
+premier usage.
 
 ### Arborescence de sortie
 
